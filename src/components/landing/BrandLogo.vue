@@ -13,8 +13,8 @@ withDefaults(
 </script>
 
 <template>
-  <a
-    href="#"
+  <router-link
+    to="/"
     class="inline-flex items-center"
     :class="variant === 'dark' ? 'gap-[15px]' : 'gap-2'"
     aria-label="JobSeeker home"
@@ -29,5 +29,5 @@ withDefaults(
       alt="JobSeeker"
       :class="variant === 'dark' ? 'h-8 w-auto' : 'h-[17px] w-auto'"
     />
-  </a>
+  </router-link>
 </template>

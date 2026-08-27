@@ -36,12 +36,12 @@ const jobs = [
           </h2>
           <img :src="underline" class="h-2 w-[123px]" alt="" />
         </div>
-        <a href="#" class="flex items-center gap-2">
+        <router-link to="/jobs" class="flex items-center gap-2">
           <span class="text-base font-medium text-[#0b2b82] underline underline-offset-2">
             Browse All
           </span>
           <img :src="arrow" class="size-4" alt="" />
-        </a>
+        </router-link>
       </div>
 
       <!-- Cards -->
@@ -66,12 +66,12 @@ const jobs = [
             </div>
           </div>
 
-          <a href="#" class="flex items-center gap-2">
+          <router-link to="/jobs/product-designer" class="flex items-center gap-2">
             <span class="text-base font-medium text-[#0c2e82] underline underline-offset-2">
               More Details
             </span>
             <img :src="arrow" class="size-4" alt="" />
-          </a>
+          </router-link>
         </article>
       </div>
     </div>

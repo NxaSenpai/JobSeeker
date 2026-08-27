@@ -30,7 +30,7 @@ import decoWhite from '@/assets/img/cta-deco-2.svg'
         </p>
       </div>
 
-      <router-link to="/auth"
+      <router-link to="/register"
         type="button"
         class="bg-white px-8 py-4 text-base font-medium text-[#7b66ff] transition-colors hover:bg-[#f1efff] cursor-pointer"
       >

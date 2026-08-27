@@ -37,12 +37,12 @@ const jobs = [
           <img :src="underline" class="h-2 w-[129px]" alt="" />
         </div>
         <img :src="frame" class="h-[104px] w-auto" alt="" />
-        <a href="#" class="ml-auto flex items-center gap-2">
-          <span class="text-base font-medium text-[#0b2b82] underline underline-offset-2">
+        <router-link to="/jobs" class="ml-auto flex items-center gap-2">
+          <span class="text-base font-medium text-[#0b2b82] underline underline-offset-2 w-20">
             Browse All
           </span>
           <img :src="arrow" class="size-4" alt="" />
-        </a>
+        </router-link>
       </div>
 
       <!-- Cards -->
@@ -89,12 +89,12 @@ const jobs = [
                 London, United Kingdom
               </span>
             </div>
-            <a href="#" class="flex items-center gap-2">
+            <router-link to="/jobs/product-designer" class="flex items-center gap-2">
               <span class="text-base font-medium text-[#0c2e82] underline underline-offset-2">
                 More Details
               </span>
               <img :src="arrow" class="size-4" alt="" />
-            </a>
+            </router-link>
           </div>
         </article>
       </div>

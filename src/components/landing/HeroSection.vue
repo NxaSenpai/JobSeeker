@@ -45,19 +45,12 @@ import frame25 from '@/assets/img/frame-25.svg'
                   </span>
                 </div>
               </div>
-              <button
-                type="button"
+              <router-link
+                to="/jobs"
                 class="ml-[117px] bg-[#7b66ff] px-[38px] py-4 text-base font-medium text-white shadow-[0_26px_73px_0_rgba(123,102,255,0.69)] transition-colors hover:bg-[#6f5cf9] cursor-pointer"
               >
                 Search
-              </button>
-            </div>
-
-            <!-- Tags -->
-            <div class="flex items-center gap-6 mt-10">
-              <p class="whitespace-nowrap text-base text-[#9eabcd]">
-                Tags: Digital Marketer, UX Designer, Data Analyst
-              </p>
+              </router-link>
             </div>
           </div>
         </div>
