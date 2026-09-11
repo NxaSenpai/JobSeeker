@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, useId } from 'vue'
 
 defineProps<{
   modelValue: string
@@ -13,13 +13,15 @@ defineEmits<{
 }>()
 
 const isVisible = ref(false)
+const inputId = useId()
 </script>
 
 <template>
-  <label class="block text-sm font-medium text-[#34457d]">
-    {{ label }}
+  <div class="block text-sm font-medium text-[#34457d]">
+    <label :for="inputId">{{ label }}</label>
     <div class="relative mt-2">
       <input
+        :id="inputId"
         :value="modelValue"
         required
         :type="isVisible ? 'text' : 'password'"
@@ -33,5 +35,5 @@ const isVisible = ref(false)
         <svg v-else class="size-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="m3 3 18 18M10.584 10.587a2 2 0 002.828 2.828M9.88 4.11A9.953 9.953 0 0112 4c4.478 0 8.268 2.943 9.543 7a9.97 9.97 0 01-4.132 5.411M6.61 6.61A9.953 9.953 0 002.458 12C3.732 16.057 7.523 19 12 19c.87 0 1.714-.111 2.52-.32" /></svg>
       </button>
     </div>
-  </label>
+  </div>
 </template>

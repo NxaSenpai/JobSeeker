@@ -31,7 +31,7 @@ export function usePageMotion(root: Ref<HTMLElement | null>) {
       new Set(
         Array.from(
           element.querySelectorAll<AnimatedTarget>(
-            '[data-reveal], main > *, main article, main aside, main form, main nav, header, footer',
+            '[data-reveal], main > *, main article, main aside, main form, main nav, header:not([data-no-reveal]), footer',
           ),
         ),
       ),

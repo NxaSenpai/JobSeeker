@@ -9,7 +9,7 @@ usePageMotion(layoutRef)
 </script>
 
 <template>
-  <div ref="layoutRef" class="min-h-screen overflow-x-clip bg-white">
+  <div ref="layoutRef" class="min-h-screen bg-white">
     <TheNavbar />
     <main>
       <router-view />

@@ -13,7 +13,7 @@ defineProps<{ company: Company }>()
       <span class="rounded-full bg-[#f4f1ff] px-3 py-1 text-xs font-semibold text-[#6956d3]">{{ company.openRoles }} open roles</span>
     </div>
     <div class="mt-5">
-      <router-link :to="`/companies/${company.id}`" class="text-xl font-semibold tracking-[-0.02em] text-[#0b2b82] transition group-hover:text-[#6d58ed]">{{ company.name }}</router-link>
+      <router-link :to="`/companies/${company.id}`" class="text-xl font-semibold tracking-[-0.02em] text-[#0b2b82] transition hover:underline group-hover:text-[#6d58ed]">{{ company.name }}</router-link>
       <p class="mt-1 text-sm text-[#53669a]">{{ company.industry }}</p>
     </div>
     <p class="mt-4 flex items-center gap-1.5 text-sm text-[#6d789d]"><svg class="size-4 text-[#8172d3]" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M12 21s6-4.35 6-10a6 6 0 10-12 0c0 5.65 6 10 6 10z" /><circle cx="12" cy="11" r="2" /></svg>{{ company.location }}</p>

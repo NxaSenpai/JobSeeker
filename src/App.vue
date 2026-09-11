@@ -1,6 +1,13 @@
 <script setup lang="ts">
-import { ref } from 'vue'
-const showAuth = ref(false)
+import { watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import { currentUser } from '@/services/auth'
+
+const route = useRoute()
+const router = useRouter()
+watch(currentUser, (user) => {
+  if (!user && route.meta.requiresAuth) void router.replace({ name: 'AuthPage', query: { redirect: route.fullPath } })
+})
 </script>
 
 <template>

@@ -1,9 +1,12 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import JobCard from '@/components/public/JobCard.vue'
 import { jobs } from '@/data/catalog'
 
-const search = ref('')
+const route = useRoute()
+const search = ref(typeof route.query.q === 'string' ? route.query.q : '')
+watch(() => route.query.q, value => { search.value = typeof value === 'string' ? value : '' })
 const workplace = ref('All')
 const jobType = ref('All')
 const sort = ref('Newest')
@@ -11,7 +14,7 @@ const sort = ref('Newest')
 const filteredJobs = computed(() => {
   const keyword = search.value.trim().toLowerCase()
   return [...jobs]
-    .filter((job) => !keyword || [job.title, job.company, job.location, ...job.skills].join(' ').toLowerCase().includes(keyword))
+    .filter((job) => !keyword || [job.title, job.company, job.location, job.category, ...job.skills].join(' ').toLowerCase().includes(keyword))
     .filter((job) => workplace.value === 'All' || job.workplace === workplace.value)
     .filter((job) => jobType.value === 'All' || job.type === jobType.value)
     .sort((a, b) => sort.value === 'Salary' ? b.salary.localeCompare(a.salary) : a.title.localeCompare(b.title))

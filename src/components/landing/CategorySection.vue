@@ -7,6 +7,7 @@ import catTechnology from '@/assets/img/cat-technology.png'
 import catEngineering from '@/assets/img/cat-engineering.png'
 import catMarketing from '@/assets/img/cat-marketing.png'
 import catProgrammer from '@/assets/img/cat-programmer.png'
+import { jobs } from '@/data/catalog'
 
 const categories = [
   { name: 'Design', icon: catDesign },
@@ -36,30 +37,30 @@ function iconStyle(icon: string) {
 
 <template>
   <section class="pb-20 pt-10">
-    <div class="mx-auto flex max-w-[1440px] flex-col gap-10 px-[108px]">
-      <h2 class="text-[56px] font-semibold leading-[1.2] text-[#0b2b82]">
+    <div class="mx-auto flex max-w-[1440px] flex-col gap-10 px-6 sm:px-10 lg:px-[108px]">
+      <h2 class="text-4xl font-semibold leading-[1.2] text-[#0b2b82] sm:text-[56px]">
         Explore by <span class="text-[#7b66ff]">category</span>
       </h2>
 
       <div
-        class="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4"
+        class="grid grid-cols-1 gap-6 sm:grid-cols-2 xl:grid-cols-4"
       >
-        <a
+        <router-link
           v-for="category in categories"
           :key="category.name"
-          href="#"
+          :to="{ path: '/jobs', query: { q: category.name } }"
           class="flex h-[144px] items-center gap-4 border border-[#d8d1ff] px-6 transition-colors hover:border-[#7b66ff] hover:bg-[#f7f5ff]"
         >
           <div class="size-12 shrink-0" :style="iconStyle(category.icon)" />
           <div class="flex flex-col gap-5">
-            <span class="text-2xl font-semibold text-[#0b2b82]">
+            <span class="text-xl font-semibold text-[#0b2b82]">
               {{ category.name }}
             </span>
             <span class="whitespace-nowrap text-base text-[#3d589b]">
-              235 Jobs Available
+              {{ jobs.filter(job => job.category.toLowerCase().includes(category.name.toLowerCase())).length }} roles in catalog
             </span>
           </div>
-        </a>
+        </router-link>
       </div>
     </div>
   </section>

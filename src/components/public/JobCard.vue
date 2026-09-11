@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { Job } from '@/data/catalog'
+import SaveJobButton from './SaveJobButton.vue'
 
 defineProps<{ job: Job; compact?: boolean }>()
 </script>
@@ -16,9 +17,7 @@ defineProps<{ job: Job; compact?: boolean }>()
           <p class="mt-1 text-xs text-[#8b81d0]">{{ job.posted }}</p>
         </div>
       </div>
-      <button type="button" class="grid size-9 shrink-0 place-items-center rounded-full border border-[#e5e1f5] text-[#7b66ff] transition hover:border-[#7b66ff] hover:bg-[#f3f1ff]" aria-label="Save job">
-        <svg class="size-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M5 3.75A2.25 2.25 0 017.25 1.5h9.5A2.25 2.25 0 0119 3.75V22l-7-4-7 4V3.75z" /></svg>
-      </button>
+      <SaveJobButton :job-id="job.id" compact />
     </div>
 
     <div>
@@ -32,7 +31,7 @@ defineProps<{ job: Job; compact?: boolean }>()
       <span v-for="skill in job.skills.slice(0, compact ? 2 : 3)" :key="skill" class="rounded-full bg-[#f8f8fb] px-3 py-1 text-xs text-[#68759d]">{{ skill }}</span>
     </div>
 
-    <div class="flex items-center justify-between border-t border-[#efedf7] pt-4 text-sm">
+    <div class="flex flex-wrap items-center justify-between gap-3 border-t border-[#efedf7] pt-4 text-sm">
       <span class="flex items-center gap-1.5 text-[#52669e]"><svg class="size-4 text-[#8172d3]" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M12 21s6-4.35 6-10a6 6 0 10-12 0c0 5.65 6 10 6 10z" /><circle cx="12" cy="11" r="2" /></svg>{{ job.location }}</span>
       <span class="font-semibold text-[#0b2b82]">{{ job.salary }}</span>
     </div>
