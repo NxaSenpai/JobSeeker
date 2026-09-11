@@ -22,6 +22,11 @@ import { verifySession } from '@/services/session'
 
 const router = createRouter({
   history: createWebHistory(),
+  scrollBehavior(to, _from, savedPosition) {
+    if (savedPosition) return savedPosition
+    if (to.hash) return { el: to.hash, top: 20, behavior: 'smooth' }
+    return { top: 0, left: 0, behavior: 'auto' }
+  },
   routes: [
 
     {

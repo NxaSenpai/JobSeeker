@@ -62,7 +62,7 @@ function clearFilters() {
     </div>
 
     <div class="mt-10 grid gap-10 lg:grid-cols-[250px_minmax(0,1fr)]">
-      <aside class="h-fit rounded-2xl border border-[#e7e4f4] bg-[#fcfbff] p-5 lg:sticky lg:top-6">
+      <aside class="h-fit rounded-2xl border border-[#e7e4f4] bg-[#fcfbff] p-5 lg:top-6">
         <div class="flex items-center justify-between">
           <h2 class="font-semibold text-[#0b2b82]">Refine results</h2>
           <button type="button" class="text-sm font-medium text-[#7561dd] hover:text-[#5d48ca]" @click="clearFilters">Clear all</button>

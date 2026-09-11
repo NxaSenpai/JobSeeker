@@ -32,7 +32,6 @@ const navigation = [
   { label: 'Dashboard', icon: 'grid' },
   { label: 'Jobs', icon: 'briefcase', count: '12' },
   { label: 'Applicants', icon: 'users', count: '28' },
-  { label: 'Company profile', icon: 'building' },
   { label: 'Analytics', icon: 'chart' },
 ]
 
@@ -156,7 +155,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', handleShortcut))
             <span class="profile-copy"><strong>{{ displayName }}</strong><small>Company account</small></span>
             <UiIcon name="chevron" :size="16" />
           </button>
-          <div v-if="showSidebarProfileMenu" id="sidebar-profile-menu" class="profile-menu"><button type="button">View profile</button><button type="button" @click="signOut">Sign out</button></div>
+          <div v-if="showSidebarProfileMenu" id="sidebar-profile-menu" class="profile-menu"><button type="button" @click="signOut">Sign out</button></div>
         </div>
       </div>
     </aside>

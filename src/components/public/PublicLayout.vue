@@ -1,18 +1,22 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { useRoute } from 'vue-router'
 import TheFooter from '@/components/landing/TheFooter.vue'
 import TheNavbar from '@/components/landing/TheNavbar.vue'
-import { usePageMotion } from '@/composables/usePageMotion'
 
-const layoutRef = ref<HTMLElement | null>(null)
-usePageMotion(layoutRef)
+const route = useRoute()
 </script>
 
 <template>
-  <div ref="layoutRef" class="min-h-screen bg-white">
+  <div class="min-h-screen bg-white">
     <TheNavbar />
     <main>
-      <router-view />
+      <router-view v-slot="{ Component }">
+        <Transition name="route" mode="out-in">
+          <div :key="route.fullPath" class="route-stage">
+            <component :is="Component" />
+          </div>
+        </Transition>
+      </router-view>
     </main>
     <TheFooter />
   </div>

@@ -8,7 +8,6 @@ const tabs = [{ to: '/profile', label: 'Profile' }, { to: '/saved-jobs', label: 
     <h1>{{ title }}</h1>
     <p class="account-description">{{ description }}</p>
     <nav class="account-tabs" aria-label="Your account pages">
-      <router-link v-for="tab in tabs" :key="tab.to" :to="tab.to">{{ tab.label }}</router-link>
     </nav>
     <slot />
   </section>

@@ -19,6 +19,11 @@ outside click, Escape, arrow keys, Home/End, focus management, and mobile use.
 - `/jobs/:id/apply`: prepare a private cover letter and optional HTTPS résumé link.
 - `/applications`: continue or delete private application drafts.
 
+Company profiles live in the candidate-facing public area at `/companies/:id`.
+They can be opened from the company directory, company cards, and job details.
+The hiring dashboard is reserved for company operations and does not contain
+the public profile view.
+
 The current listings come from `src/data/catalog.ts`, not a live employer
 job API. Drafts are explicitly **not submitted**. No application or email
 is sent, and no résumé file is uploaded. Employer submission is a separate,

@@ -11,5 +11,11 @@ watch(currentUser, (user) => {
 </script>
 
 <template>
-  <router-view />
+  <router-view v-slot="{ Component }">
+    <Transition name="route" mode="out-in">
+      <div :key="route.matched[0]?.path || route.path" class="route-stage">
+        <component :is="Component" />
+      </div>
+    </Transition>
+  </router-view>
 </template>
