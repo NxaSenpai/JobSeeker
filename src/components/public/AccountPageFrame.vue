@@ -4,7 +4,6 @@ const tabs = [{ to: '/profile', label: 'Profile' }, { to: '/saved-jobs', label: 
 </script>
 <template>
   <section class="account-page">
-    <router-link to="/jobs" class="back-link">← Explore jobs</router-link>
     <h1>{{ title }}</h1>
     <p class="account-description">{{ description }}</p>
     <nav class="account-tabs" aria-label="Your account pages">

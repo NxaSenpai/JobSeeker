@@ -20,8 +20,8 @@ const socials = [facebook, linkedin, twitter]
       class="mx-auto grid max-w-[1440px] gap-12 px-6 py-16 sm:px-10 lg:grid-cols-[1fr_auto_1.15fr] lg:gap-24 lg:px-[108px] lg:py-[88px]"
     >
       <!-- Brand -->
-      <div class="flex flex-col gap-7">
-        <BrandLogo variant="dark" />
+      <div class="footer-brand flex flex-col items-start gap-7">
+        <BrandLogo variant="dark" inverted />
         <p class="w-[287px] max-w-full text-base leading-8 text-[#e3ebff]">
           Find your next career opportunity and connect with like-minded
           individuals.
@@ -87,3 +87,15 @@ const socials = [facebook, linkedin, twitter]
     </div>
   </footer>
 </template>
+
+<style scoped>
+.footer-brand :deep(.brand-logo--wordmark img) {
+  height: 84px !important;
+}
+
+@media (max-width: 639px) {
+  .footer-brand :deep(.brand-logo--wordmark img) {
+    height: 58px !important;
+  }
+}
+</style>

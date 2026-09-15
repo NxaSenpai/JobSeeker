@@ -18,7 +18,10 @@ const categories = [
   { name: 'Engineering', icon: catEngineering },
   { name: 'Marketing', icon: catMarketing },
   { name: 'Programmer', icon: catProgrammer },
-]
+].map((category) => ({
+  ...category,
+  roleCount: jobs.filter(job => job.category === category.name).length,
+})).filter(category => category.roleCount > 0)
 
 function iconStyle(icon: string) {
   return {
@@ -49,7 +52,8 @@ function iconStyle(icon: string) {
           v-for="category in categories"
           :key="category.name"
           :to="{ path: '/jobs', query: { q: category.name } }"
-          class="flex h-[144px] items-center gap-4 border border-[#d8d1ff] px-6 transition-colors hover:border-[#7b66ff] hover:bg-[#f7f5ff]"
+          :aria-label="`Browse ${category.name} jobs`"
+          class="group relative flex h-[144px] cursor-pointer items-center gap-4 border border-[#d8d1ff] px-6 transition duration-200 hover:-translate-y-0.5 hover:border-[#7b66ff] hover:bg-[#f7f5ff] active:translate-y-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#7b66ff] focus-visible:ring-offset-2"
         >
           <div class="size-12 shrink-0" :style="iconStyle(category.icon)" />
           <div class="flex flex-col gap-5">
@@ -57,7 +61,7 @@ function iconStyle(icon: string) {
               {{ category.name }}
             </span>
             <span class="whitespace-nowrap text-base text-[#3d589b]">
-              {{ jobs.filter(job => job.category.toLowerCase().includes(category.name.toLowerCase())).length }} roles in catalog
+              {{ category.roleCount }} {{ category.roleCount === 1 ? 'role' : 'roles' }} available
             </span>
           </div>
         </router-link>

@@ -9,7 +9,7 @@ function session(role: Role = 'USER', seconds = 3600) {
 }
 async function mockAccount(context: BrowserContext, role: Role = 'USER') {
   const data = session(role)
-  const state = { data, saved: new Set<string>(), drafts: new Map<string, { jobId: string; coverLetter: string; resumeUrl: string; updatedAt: string }>(), meStatus: 200, activityStatus: 200 }
+  const state = { data, profile: { skills: [] as string[] }, saved: new Set<string>(), drafts: new Map<string, { jobId: string; coverLetter: string; resumeUrl: string; updatedAt: string }>(), meStatus: 200, activityStatus: 200 }
   await context.route('**/api/v1/**', async route => {
     const req = route.request()
     const path = new URL(req.url()).pathname.replace('/api/v1', '')
@@ -24,7 +24,14 @@ async function mockAccount(context: BrowserContext, role: Role = 'USER') {
     if (path.startsWith('/account/')) {
       if (!req.headers().authorization) return reply({ message: 'Sign in required.' }, 401)
       if (state.activityStatus !== 200) return reply({ message: 'Please try again shortly.' }, state.activityStatus)
-      if (path === '/account/profile' && method === 'PATCH') { Object.assign(data.user, req.postDataJSON()); return reply({ user: data.user }) }
+      if (path === '/account/profile' && method === 'GET') return reply({ user: data.user, profile: { ...data.user, skills: state.profile.skills } })
+      if (path === '/account/profile' && method === 'PATCH') {
+        const patch = req.postDataJSON() as Record<string, unknown>
+        if (Array.isArray(patch.skills)) state.profile.skills = patch.skills as string[]
+        Object.assign(data.user, patch)
+        return reply({ user: data.user, profile: { ...data.user, skills: state.profile.skills } })
+      }
+      if (path === '/account/resumes' && method === 'GET') return reply({ resumes: [] })
       if (path === '/account/saved-jobs') return reply({ jobs: [...state.saved].map(jobId => ({ jobId })) })
       if (path.startsWith('/account/saved-jobs/')) {
         const id = path.split('/').at(-1)!
@@ -80,6 +87,8 @@ test('account dropdown supports keyboard, outside click, and mobile layout', asy
   await seed(context, data)
   await page.goto('/')
   const menu = await openMenu(page)
+  await expect(page.getByRole('button', { name: 'Open account menu' })).toBeFocused()
+  await page.keyboard.press('ArrowDown')
   await expect(menu.getByRole('menuitem', { name: 'View profile' })).toBeFocused()
   await page.keyboard.press('ArrowDown')
   await expect(menu.getByRole('menuitem', { name: 'Saved jobs' })).toBeFocused()
@@ -137,6 +146,12 @@ test('profile edits update the header immediately and survive refresh', async ({
   await page.getByRole('button', { name: 'Edit profile', exact: true }).click()
   await expect(page.getByLabel('First name', { exact: true })).toHaveValue('Sophea')
   await expect(page.getByLabel('Professional headline')).toHaveValue('Product designer')
+  await page.getByRole('button', { name: 'Cancel', exact: true }).click()
+  await page.getByLabel('Add a skill, technology, or language').fill('TypeScript')
+  await page.getByRole('button', { name: 'Add', exact: true }).click()
+  await expect(page.getByText('TypeScript', { exact: true })).toBeVisible()
+  await page.reload()
+  await expect(page.getByText('TypeScript', { exact: true })).toBeVisible()
 })
 
 test('guest application returns after login, saves a private draft and deletes it', async ({ page, context }) => {
@@ -251,6 +266,32 @@ test('removed dashboard redirects home and unknown jobs do not open another list
   await page.goto('/jobs/missing-job')
   await expect(page.getByRole('heading', { name: 'Job not found', exact: true })).toBeVisible()
   await expect(page.getByRole('link', { name: 'Sign in to apply' })).toHaveCount(0)
+})
+
+test('job categories customize the results page and filter controls apply clearly', async ({ page, context }) => {
+  await mockAccount(context)
+  await page.goto('/')
+  await expect(page.getByRole('link', { name: 'Browse Design jobs' })).toBeVisible()
+  await expect(page.getByRole('link', { name: 'Browse Electrician jobs' })).toHaveCount(0)
+  await page.getByRole('link', { name: 'Browse Design jobs' }).click()
+  await expect(page).toHaveURL('/jobs?q=Design')
+  await expect(page.getByRole('heading', { name: 'Design roles worth a closer look.', exact: true })).toBeVisible()
+  await expect(page.getByText('Showing Design roles', { exact: true })).toBeVisible()
+  await page.getByRole('button', { name: 'Clear category', exact: true }).click()
+  await expect(page).toHaveURL('/jobs')
+
+  const search = page.getByRole('searchbox', { name: 'Search jobs' })
+  await search.fill('Figma')
+  await expect(page.getByText('Filters changed. Search roles to update the results.', { exact: true })).toBeVisible()
+  await page.getByRole('button', { name: 'Search roles', exact: true }).click()
+  await expect(page).toHaveURL('/jobs?q=Figma')
+  await expect(page.getByRole('link', { name: 'Senior Product Designer', exact: true })).toBeVisible()
+
+  await page.getByRole('button', { name: 'Clear all', exact: true }).click()
+  await expect(page).toHaveURL('/jobs')
+  await page.getByRole('button', { name: 'Technology', exact: true }).click()
+  await expect(page).toHaveURL('/jobs?q=Technology')
+  await expect(page.getByRole('link', { name: 'Full-Stack Engineer', exact: true })).toBeVisible()
 })
 
 test('signing out from a private page lands home and clears session storage', async ({ page, context }) => {

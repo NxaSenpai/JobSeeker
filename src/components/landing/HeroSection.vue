@@ -16,7 +16,6 @@ const router = useRouter()
         <!-- Left: headline + search -->
         <div class="relative z-10 flex min-w-0 max-w-[700px] flex-col gap-9">
           <div class="flex flex-col gap-10">
-            <p v-if="isJobSeeker && currentUser" class="text-sm font-semibold text-[#7059d8]">Welcome back, {{ currentUser.firstName || displayNameForUser(currentUser) }}.</p>
             <h1 v-if="isJobSeeker" class="text-[clamp(40px,5.5vw,72px)] font-bold leading-[1.15] tracking-[-0.035em] text-[#0b2b82]">Your next chapter <span class="text-[#7b66ff]">starts here.</span></h1>
             <h1 v-else class="text-[clamp(40px,5.5vw,72px)] font-bold leading-[1.15] tracking-[-0.035em] text-[#0b2b82]">
               Explore Over
@@ -32,10 +31,9 @@ const router = useRouter()
           </div>
           <form class="flex max-w-[600px] flex-col gap-3 rounded-xl border border-[#e1daf7] bg-white p-3 sm:flex-row" role="search" @submit.prevent="router.push({ path: '/jobs', query: search.trim() ? { q: search.trim() } : {} })">
             <label class="sr-only" for="hero-search">Job title, company, or keyword</label>
-            <input id="hero-search" v-model="search" type="search" placeholder="Job title, company, or keyword" class="min-h-11 min-w-0 flex-1 rounded-lg px-3 text-sm text-[#0b2b82] outline-[#7b66ff]" />
+            <input id="hero-search" v-model="search" type="search" placeholder="Job title, company, or keyword" class="min-h-11 min-w-0 flex-1 rounded-lg px-3 text-sm text-[#0b2b82] outline-hidden" />
             <button type="submit" class="min-h-11 cursor-pointer rounded-lg bg-[#7b66ff] px-6 py-3 text-sm font-semibold text-white hover:bg-[#6954e5]">Find jobs</button>
           </form>
-          <div v-if="isJobSeeker" class="flex flex-wrap gap-6 text-sm font-semibold text-[#6b58d4]"><router-link to="/saved-jobs" class="hover:underline">Your saved jobs →</router-link><router-link to="/applications" class="hover:underline">Application drafts →</router-link></div>
 
         </div>
 

@@ -12,7 +12,7 @@ const route = useRoute()
     <main>
       <router-view v-slot="{ Component }">
         <Transition name="route" mode="out-in">
-          <div :key="route.fullPath" class="route-stage">
+          <div :key="route.path" class="route-stage">
             <component :is="Component" />
           </div>
         </Transition>

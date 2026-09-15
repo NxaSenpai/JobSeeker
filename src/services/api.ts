@@ -18,7 +18,7 @@ export async function apiRequest<T>(path: string, options: RequestInit = {}): Pr
   const session = getAuthSession()
 
   const headers = new Headers(options.headers)
-  headers.set('Content-Type', 'application/json')
+  if (!(options.body instanceof FormData)) headers.set('Content-Type', 'application/json')
   if (session && (path.startsWith('/account/') || path === '/auth/me')) {
     headers.set('Authorization', `Bearer ${session.accessToken}`)
   }
@@ -48,4 +48,39 @@ export async function apiRequest<T>(path: string, options: RequestInit = {}): Pr
   }
 
   return payload as T
+}
+
+export async function apiBlob(path: string): Promise<Blob> {
+  const session = getAuthSession()
+  const headers = new Headers()
+  if (session && path.startsWith('/account/')) {
+    headers.set('Authorization', `Bearer ${session.accessToken}`)
+  }
+
+  const response = await fetch(`${apiBaseUrl}${path}`, { headers })
+  if (!response.ok) {
+    if (
+      response.status === 401 &&
+      session &&
+      getAuthSession()?.accessToken === session.accessToken
+    ) {
+      clearAuthSession()
+    }
+    const contentType = response.headers.get('content-type') ?? ''
+    const payload = contentType.includes('application/json')
+      ? await response.json()
+      : await response.text()
+    const serverMessage =
+      typeof payload === 'object' && payload !== null && 'message' in payload
+        ? payload.message
+        : undefined
+    const message = Array.isArray(serverMessage)
+      ? serverMessage.join(' ')
+      : typeof serverMessage === 'string'
+        ? serverMessage
+        : 'The file could not be loaded.'
+    throw new ApiRequestError(message, response.status)
+  }
+
+  return response.blob()
 }

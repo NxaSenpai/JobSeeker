@@ -23,13 +23,19 @@ const accountLinks = computed(() => !currentUser.value ? [] : isJobSeeker.value 
 ] : [{ label: currentUser.value.role === 'ADMIN' ? 'Admin dashboard' : 'Company dashboard', to: dashboardPathForRole(currentUser.value.role), count: undefined }])
 
 function closeMenus() { isOpen.value = false; profileOpen.value = false }
-async function openProfile() {
+function openProfile() {
   profileOpen.value = !profileOpen.value
   isOpen.value = false
-  if (profileOpen.value) {
+}
+async function openProfileFromKeyboard(position: 'first' | 'last') {
+  if (!profileOpen.value) {
+    profileOpen.value = true
+    isOpen.value = false
     await nextTick()
-    profileMenu.value?.querySelector<HTMLElement>('[role="menuitem"]')?.focus()
   }
+  const items = profileMenu.value?.querySelectorAll<HTMLElement>('[role="menuitem"]')
+  const target = position === 'first' ? items?.[0] : items?.[items.length - 1]
+  target?.focus()
 }
 function menuKeydown(event: KeyboardEvent) {
   const items = Array.from(profileMenu.value?.querySelectorAll<HTMLElement>('[role="menuitem"]') ?? [])
@@ -52,11 +58,10 @@ function escape(event: KeyboardEvent) {
 function focusOut(event: FocusEvent) {
   if (event.relatedTarget && !header.value?.contains(event.relatedTarget as Node)) closeMenus()
 }
-async function signOut() {
+function signOut() {
   closeMenus()
-  // Leave protected content before clearing the session, so the expiry guard
-  // does not compete with this deliberate navigation back home.
-  try { await router.replace('/') } finally { clearAuthSession() }
+  clearAuthSession()
+  void router.replace({ name: 'AuthPage' })
 }
 watch(() => route.fullPath, closeMenus)
 watch(currentUser, (user) => { if (!user) closeMenus() })
@@ -67,7 +72,7 @@ onBeforeUnmount(() => { document.removeEventListener('pointerdown', outsideClick
 <template>
   <header ref="header" data-no-reveal class="site-header" @focusout="focusOut">
     <nav class="header-inner" aria-label="Main navigation">
-      <BrandLogo />
+      <BrandLogo class="navbar-brand-logo" />
       <div class="desktop-links">
         <router-link v-for="link in links" :key="link.to" :to="link.to">{{ link.label }}</router-link>
       </div>
@@ -77,7 +82,7 @@ onBeforeUnmount(() => { document.removeEventListener('pointerdown', outsideClick
           <router-link to="/login" class="sign-in">Sign In</router-link>
         </template>
         <div v-else class="profile-control">
-          <button ref="profileButton" class="profile-button" type="button" aria-label="Open account menu" aria-haspopup="menu" aria-controls="account-menu" :aria-expanded="profileOpen" @click="openProfile" @keydown.down.prevent="!profileOpen && openProfile()">
+          <button ref="profileButton" class="profile-button" type="button" aria-label="Open account menu" aria-haspopup="menu" aria-controls="account-menu" :aria-expanded="profileOpen" @click="openProfile" @keydown.down.prevent="openProfileFromKeyboard('first')" @keydown.up.prevent="openProfileFromKeyboard('last')">
             <span class="avatar" aria-hidden="true">{{ initials }}</span>
           </button>
           <Transition name="dropdown">
@@ -109,6 +114,7 @@ onBeforeUnmount(() => { document.removeEventListener('pointerdown', outsideClick
 .desktop-links { display: flex; gap: 32px; font-size: 14px; font-weight: 500; white-space: nowrap; }
 .desktop-links a:hover, .desktop-links .router-link-active, .join-link:hover { color: #7b66ff; }
 .header-actions { display: flex; align-items: center; gap: 20px; margin-left: auto; }
+:deep(.navbar-brand-logo.brand-logo--wordmark img) { height: 56px !important; }
 .join-link { white-space: nowrap; font-size: 14px; font-weight: 500; }
 .sign-in { padding: 11px 20px; border-radius: 8px; background: #7b66ff; color: white; font-size: 14px; font-weight: 600; white-space: nowrap; }
 .sign-in:hover { background: #6954e5; }
@@ -126,7 +132,7 @@ onBeforeUnmount(() => { document.removeEventListener('pointerdown', outsideClick
 .account-identity span { font-size: 12px; color: #68759d; }
 .account-identity small { margin-top: 5px; font-size: 11px; color: #7561d9; }
 .menu-item { display: flex; align-items: center; justify-content: space-between; width: 100%; min-height: 44px; padding: 11px 12px; border-radius: 8px; font-size: 14px; text-align: left; cursor: pointer; }
-.menu-item:hover, .menu-item:focus { background: #f3f0ff; }
+.menu-item:hover, .menu-item:focus-visible { background: #f3f0ff; }
 .menu-count { min-width: 23px; padding: 1px 6px; border-radius: 5px; background: #eeeaff; font-size: 11px; text-align: center; }
 .sign-out { margin-top: 6px; border-top: 1px solid #efedf7; color: #a33f55; }
 button:focus-visible, a:focus-visible { outline: 2px solid #7b66ff; outline-offset: 3px; }
@@ -136,7 +142,7 @@ button:focus-visible, a:focus-visible { outline: 2px solid #7b66ff; outline-offs
 .dropdown-enter-active, .dropdown-leave-active { transition: opacity .15s, transform .15s; }
 .dropdown-enter-from, .dropdown-leave-to { opacity: 0; transform: translateY(-5px); }
 @media (max-width: 1023px) { .desktop-links { display: none; } .mobile-toggle { display: grid; } .header-inner { gap: 20px; } }
-@media (max-width: 639px) { .header-inner { padding: 16px 20px; gap: 12px; } .header-actions { gap: 10px; } .join-link, .profile-name, .profile-chevron { display: none; } .account-menu { right: -54px; } .sign-in { padding: 11px 14px; } }
+@media (max-width: 639px) { .header-inner { padding: 16px 20px; gap: 12px; } :deep(.navbar-brand-logo.brand-logo--wordmark img) { height: 44px !important; } .header-actions { gap: 10px; } .join-link, .profile-name, .profile-chevron { display: none; } .account-menu { right: -54px; } .sign-in { padding: 11px 14px; } }
 @media (max-width: 359px) { .header-inner { padding: 14px 16px; gap: 8px; } }
 @media (prefers-reduced-motion: reduce) { .dropdown-enter-active, .dropdown-leave-active, .profile-chevron { transition: none; } }
 </style>

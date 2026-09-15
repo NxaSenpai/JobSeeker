@@ -20,10 +20,6 @@ async function toggle() {
 </script>
 <template>
   <div v-if="!currentUser || currentUser.role === 'USER'" class="save-control" :class="{ compact, inverse }">
-    <button type="button" :class="{ saved }" :disabled="busy || !!activityError" :aria-label="saved ? 'Remove saved job' : 'Save job'" :aria-pressed="saved" :title="activityError || (saved ? 'Remove saved job' : 'Save job')" @click="toggle">
-      <svg width="17" height="19" :fill="saved ? 'currentColor' : 'none'" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.8" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M6 3h12v18l-6-4-6 4V3Z" /></svg>
-      <span v-if="!compact">{{ busy ? 'Please wait…' : saved ? 'Saved to your jobs' : 'Save for later' }}</span>
-    </button>
     <span class="sr-only" role="status">{{ announcement }}</span>
     <p v-if="error" role="alert" class="save-error">{{ error }}</p>
     <p v-if="activityError && !compact" class="save-error">Your saved jobs couldn't be loaded. <button type="button" class="retry" @click="loadActivity">Retry</button></p>

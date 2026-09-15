@@ -12,9 +12,9 @@ const filteredCompanies = computed(() => {
 </script>
 
 <template>
-  <section class="relative overflow-hidden border-b border-[#e8e4f7] bg-[#0b2b82]">
+  <section class="relative overflow-hidden border-b border-[#e8e4f7] bg-[#7b66ff]">
     <div class="pointer-events-none absolute -right-24 -top-32 size-[420px] rounded-full border-[70px] border-[#1c4297] opacity-60"></div><div class="pointer-events-none absolute bottom-0 left-[16%] h-20 w-72 rounded-t-full bg-[#7b66ff]/20 blur-2xl"></div>
-    <div class="relative mx-auto max-w-[1440px] px-6 py-16 sm:px-10 lg:px-[108px] lg:py-20"><p class="text-sm font-semibold uppercase tracking-[0.18em] text-[#bcb1ff]">Meet the teams behind the work</p><h1 class="mt-4 max-w-2xl text-4xl font-semibold tracking-[-0.04em] text-white sm:text-5xl">Find a company you can believe in.</h1><p class="mt-5 max-w-xl text-base leading-7 text-[#c5d1f0]">Explore companies by their culture, craft, and the opportunities they are creating now.</p></div>
+    <div class="relative mx-auto max-w-[1440px] px-6 py-16 sm:px-10 lg:px-[108px] lg:py-20"><p class="text-sm font-semibold uppercase tracking-[0.18em] text-[#bcb1ff]">Meet the teams behind the work</p><h1 class="mt-4 max-w-2xl text-4xl font-semibold tracking-[-0.04em] text-white sm:text-5xl">Find a company you can believe in.</h1></div>
   </section>
 
   <section class="mx-auto max-w-[1440px] px-6 py-10 sm:px-10 lg:px-[108px] lg:py-14">
