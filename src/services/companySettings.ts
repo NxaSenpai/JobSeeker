@@ -11,6 +11,7 @@ export type CompanySettings = {
   contactName: string
   contactEmail: string
   timezone: string
+  darkMode: boolean
   emailNewApplicant: boolean
   emailInterviewReminder: boolean
   weeklySummary: boolean
@@ -30,6 +31,7 @@ function defaultsFor(user?: AuthUser | null): CompanySettings {
     contactName: user?.contactName ?? '',
     contactEmail: user?.email ?? '',
     timezone: 'Asia/Phnom_Penh',
+    darkMode: false,
     emailNewApplicant: true,
     emailInterviewReminder: true,
     weeklySummary: false,

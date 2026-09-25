@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { onBeforeUnmount, ref } from 'vue'
 import catDesign from '@/assets/img/cat-design.png'
 import catAnalyst from '@/assets/img/cat-analyst.png'
 import catElectrician from '@/assets/img/cat-electrician.png'
@@ -7,21 +8,50 @@ import catTechnology from '@/assets/img/cat-technology.png'
 import catEngineering from '@/assets/img/cat-engineering.png'
 import catMarketing from '@/assets/img/cat-marketing.png'
 import catProgrammer from '@/assets/img/cat-programmer.png'
-import { jobs } from '@/data/catalog'
+import { ApiRequestError } from '@/services/api'
+import { listPublicJobCategories, type PublicJobCategory } from '@/services/publicCatalog'
 
-const categories = [
-  { name: 'Design', icon: catDesign },
-  { name: 'Analyst', icon: catAnalyst },
-  { name: 'Electrician', icon: catElectrician },
-  { name: 'Finance', icon: catFinance },
-  { name: 'Technology', icon: catTechnology },
-  { name: 'Engineering', icon: catEngineering },
-  { name: 'Marketing', icon: catMarketing },
-  { name: 'Programmer', icon: catProgrammer },
-].map((category) => ({
-  ...category,
-  roleCount: jobs.filter(job => job.category === category.name).length,
-})).filter(category => category.roleCount > 0)
+const categories = ref<Array<PublicJobCategory & { icon: string }>>([])
+const loading = ref(true)
+const error = ref('')
+let controller: AbortController | undefined
+
+function iconForCategory(name: string) {
+  const normalized = name.toLowerCase()
+  if (/design|creative|art/.test(normalized)) return catDesign
+  if (/analyst|data|research/.test(normalized)) return catAnalyst
+  if (/electric|trade/.test(normalized)) return catElectrician
+  if (/finance|accounting/.test(normalized)) return catFinance
+  if (/engineering|engineer/.test(normalized)) return catEngineering
+  if (/marketing|content|growth|community/.test(normalized)) return catMarketing
+  if (/software|program|developer/.test(normalized)) return catProgrammer
+  return catTechnology
+}
+
+async function loadCategories() {
+  controller?.abort()
+  controller = new AbortController()
+  const activeController = controller
+  loading.value = true
+  error.value = ''
+  try {
+    const result = await listPublicJobCategories(activeController.signal)
+    categories.value = result.categories
+      .filter((category) => category.count > 0)
+      .map((category) => ({ ...category, icon: iconForCategory(category.name) }))
+  } catch (cause) {
+    if (activeController.signal.aborted) return
+    error.value = cause instanceof ApiRequestError
+      ? cause.message
+      : 'We could not load job categories. Please try again.'
+    categories.value = []
+  } finally {
+    if (!activeController.signal.aborted) loading.value = false
+  }
+}
+
+void loadCategories()
+onBeforeUnmount(() => controller?.abort())
 
 function iconStyle(icon: string) {
   return {
@@ -45,9 +75,9 @@ function iconStyle(icon: string) {
         Explore by <span class="text-[#7b66ff]">category</span>
       </h2>
 
-      <div
-        class="grid grid-cols-1 gap-6 sm:grid-cols-2 xl:grid-cols-4"
-      >
+      <p v-if="loading" class="text-sm text-[#52669e]" role="status">Loading job categories…</p>
+      <div v-else-if="error" class="rounded-xl border border-[#f1cbd3] bg-[#fff7f9] p-5 text-sm text-[#8f354b]" role="alert">{{ error }} <button type="button" class="ml-2 font-semibold underline" @click="loadCategories">Try again</button></div>
+      <div v-else-if="categories.length" class="grid grid-cols-1 gap-6 sm:grid-cols-2 xl:grid-cols-4">
         <router-link
           v-for="category in categories"
           :key="category.name"
@@ -61,11 +91,12 @@ function iconStyle(icon: string) {
               {{ category.name }}
             </span>
             <span class="whitespace-nowrap text-base text-[#3d589b]">
-              {{ category.roleCount }} {{ category.roleCount === 1 ? 'role' : 'roles' }} available
+            {{ category.count }} {{ category.count === 1 ? 'role' : 'roles' }} available
             </span>
           </div>
         </router-link>
       </div>
+      <p v-else class="text-sm text-[#52669e]">No job categories have current openings yet.</p>
     </div>
   </section>
 </template>

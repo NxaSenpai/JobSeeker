@@ -2,7 +2,7 @@ import { ref, watch } from 'vue'
 import { apiRequest } from './api'
 import { currentUser } from './auth'
 
-export type ApplicationDraft = { jobId: string; coverLetter: string; resumeUrl: string; updatedAt: string }
+export type ApplicationDraft = { jobId: string; coverLetter: string; resumeUrl: string; updatedAt: string; resumeId?: string | null; description?: string; phone?: string; portfolioUrl?: string }
 export const savedJobIds = ref<string[]>([])
 export const applicationDrafts = ref<ApplicationDraft[]>([])
 export const activityLoading = ref(false)
@@ -50,7 +50,7 @@ export async function toggleSavedJob(jobId: string) {
   } finally { savingJobs.value = savingJobs.value.filter((id) => id !== jobId) }
 }
 
-export async function saveApplicationDraft(jobId: string, data: Pick<ApplicationDraft, 'coverLetter' | 'resumeUrl'>) {
+export async function saveApplicationDraft(jobId: string, data: Omit<ApplicationDraft, 'jobId' | 'updatedAt'>) {
   const userId = currentUser.value?.id
   const { draft } = await apiRequest<{ draft: ApplicationDraft }>(`/account/application-drafts/${encodeURIComponent(jobId)}`, { method: 'PUT', body: JSON.stringify(data) })
   if (currentUser.value?.id === userId) applicationDrafts.value = [draft, ...applicationDrafts.value.filter((item) => item.jobId !== jobId)]

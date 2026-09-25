@@ -1,8 +1,12 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { useRoute } from 'vue-router'
+import ProfileBackground from '@/components/public/ProfileBackground.vue'
+import type { CandidateProfile } from '@/services/candidate'
 import { apiBlob, apiRequest } from '@/services/api'
 import { applicationDrafts, savedJobIds } from '@/services/activity'
 import { currentUser, displayNameForUser, initialsForUser, updateAuthUser, type AuthUser } from '@/services/auth'
+import { setCandidateProfile } from '@/services/profile'
 
 type ResumeRecord = { id: string; fileName: string; mimeType: string; fileSize: number; isDefault: boolean; createdAt: string }
 
@@ -23,6 +27,39 @@ const skillsSaving = ref(false)
 const skillsError = ref('')
 const skillSuggestions = ['TypeScript', 'Vue.js', 'NestJS', 'PostgreSQL', 'Python', 'English', 'Khmer']
 const form = reactive({ firstName: '', lastName: '', headline: '', location: '', bio: '' })
+const route = useRoute()
+const profile = ref<CandidateProfile>({ phone: '', websiteUrl: '', linkedinUrl: '', githubUrl: '', isOpenToWork: false, profileImageUrl: null, skills: [], education: [], experience: [], languages: [] })
+const contactForm = reactive({ phone: '', websiteUrl: '', linkedinUrl: '', githubUrl: '', isOpenToWork: false })
+const avatarUrl = ref(''); const avatarBusy = ref(false); const profileLoaded = ref(false)
+const applicationCount = ref<number | null>(null)
+function syncContact() { Object.assign(contactForm, { phone: profile.value.phone ?? '', websiteUrl: profile.value.websiteUrl ?? '', linkedinUrl: profile.value.linkedinUrl ?? '', githubUrl: profile.value.githubUrl ?? '', isOpenToWork: profile.value.isOpenToWork ?? false }) }
+async function loadAvatar() {
+  if (avatarUrl.value) URL.revokeObjectURL(avatarUrl.value)
+  avatarUrl.value = ''
+  if (profile.value.profileImageUrl) {
+    try { avatarUrl.value = URL.createObjectURL(await apiBlob('/account/profile/avatar')) }
+    catch { error.value = 'Your photo could not be loaded. Try uploading it again.' }
+  }
+}
+async function uploadAvatar(event: Event) {
+  const input = event.target as HTMLInputElement; const file = input.files?.[0]
+  if (!file || avatarBusy.value) return
+  avatarBusy.value = true; error.value = ''; success.value = ''
+  try {
+    if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type) || file.size > 5 * 1024 * 1024) throw new Error('Choose a JPG, PNG, or WebP photo up to 5 MB.')
+    const body = new FormData(); body.append('file', file)
+    profile.value = (await apiRequest<{ profile: CandidateProfile }>('/account/profile/avatar', { method: 'POST', body })).profile
+    setCandidateProfile(profile.value)
+    await loadAvatar(); success.value = 'Profile photo updated.'
+  } catch (cause) { error.value = cause instanceof Error ? cause.message : 'Unable to upload your photo.' }
+  finally { avatarBusy.value = false; input.value = '' }
+}
+async function removeAvatar() {
+  avatarBusy.value = true; error.value = ''
+  try { await apiRequest('/account/profile/avatar', { method: 'DELETE' }); profile.value.profileImageUrl = null; setCandidateProfile(profile.value); await loadAvatar(); success.value = 'Profile photo removed.' }
+  catch (cause) { error.value = cause instanceof Error ? cause.message : 'Unable to remove your photo.' }
+  finally { avatarBusy.value = false }
+}
 
 const name = computed(() => currentUser.value ? displayNameForUser(currentUser.value) : 'Your profile')
 const initials = computed(() => currentUser.value ? initialsForUser(currentUser.value) : 'JS')
@@ -31,8 +68,8 @@ const location = computed(() => currentUser.value?.location?.trim() || 'Location
 const bio = computed(() => currentUser.value?.bio?.trim() || '')
 const profileCompletion = computed(() => {
   const details = [currentUser.value?.firstName, currentUser.value?.lastName, currentUser.value?.headline, currentUser.value?.location, currentUser.value?.bio]
-  const completed = details.filter(value => value?.trim()).length + (skills.value.length ? 1 : 0) + (resumes.value.length ? 1 : 0)
-  return Math.round(completed / 7 * 100)
+  const completed = details.filter(value => value?.trim()).length + (skills.value.length ? 1 : 0) + (resumes.value.length ? 1 : 0) + (profile.value.education?.length ? 1 : 0) + (profile.value.experience?.length ? 1 : 0) + (profile.value.profileImageUrl ? 1 : 0)
+  return Math.round(completed / 10 * 100)
 })
 
 function syncForm(user: AuthUser | null) {
@@ -45,35 +82,41 @@ function syncForm(user: AuthUser | null) {
 
 watch(currentUser, user => { if (!editing.value) syncForm(user) }, { immediate: true })
 
-function startEditing() { error.value = ''; success.value = ''; syncForm(currentUser.value); editing.value = true }
+function startEditing() { if (!profileLoaded.value) return; error.value = ''; success.value = ''; syncForm(currentUser.value); syncContact(); editing.value = true }
 function cancelEditing() { error.value = ''; syncForm(currentUser.value); editing.value = false }
 
 async function saveProfile() {
   if (saving.value) return
   error.value = ''; success.value = ''; saving.value = true
   try {
-    const { user } = await apiRequest<{ user: AuthUser }>('/account/profile', {
+    const { user, profile: updatedProfile } = await apiRequest<{ user: AuthUser; profile: CandidateProfile }>('/account/profile', {
       method: 'PATCH',
-      body: JSON.stringify({ firstName: form.firstName.trim(), lastName: form.lastName.trim(), headline: form.headline.trim(), location: form.location.trim(), bio: form.bio.trim() }),
+      body: JSON.stringify({ ...contactForm, firstName: form.firstName.trim(), lastName: form.lastName.trim(), headline: form.headline.trim(), location: form.location.trim(), bio: form.bio.trim() }),
     })
+    if (updatedProfile) { profile.value = updatedProfile; setCandidateProfile(updatedProfile) }
     updateAuthUser(user); syncForm(user); editing.value = false; success.value = 'Profile updated.'
   } catch (cause) { error.value = cause instanceof Error ? cause.message : 'Unable to update your profile.' }
   finally { saving.value = false }
 }
 
 async function loadProfile() {
+  error.value = ''
   try {
-    const { user, profile } = await apiRequest<{ user: AuthUser; profile?: { skills?: string[] } }>('/account/profile')
-    updateAuthUser(user); skills.value = profile?.skills ?? []
+    const { user, profile: loaded } = await apiRequest<{ user: AuthUser; profile: CandidateProfile }>('/account/profile')
+    updateAuthUser(user); skills.value = loaded?.skills ?? []
+    if (loaded) { profile.value = loaded; setCandidateProfile(loaded) }
+    profileLoaded.value = true; syncContact(); await loadAvatar()
+    if (route.query.edit) startEditing()
   } catch (cause) { error.value = cause instanceof Error ? cause.message : 'Unable to load your profile.' }
 }
 
 async function saveSkills(nextSkills: string[]) {
-  if (skillsSaving.value) return
+  if (skillsSaving.value || !profileLoaded.value) return
   skillsSaving.value = true; skillsError.value = ''
   try {
     const response = await apiRequest<{ profile?: { skills?: string[] } }>('/account/profile', { method: 'PATCH', body: JSON.stringify({ skills: nextSkills }) })
     skills.value = response.profile?.skills ?? nextSkills
+    setCandidateProfile({ ...profile.value, skills: skills.value })
   } catch (cause) { skillsError.value = cause instanceof Error ? cause.message : 'Unable to update your skills.' }
   finally { skillsSaving.value = false }
 }
@@ -86,6 +129,11 @@ function addSkill(value = skillInput.value) {
   skillInput.value = ''; void saveSkills([...skills.value, skill])
 }
 function removeSkill(skill: string) { void saveSkills(skills.value.filter(item => item !== skill)) }
+
+function applyBackground(updated: CandidateProfile) {
+  profile.value = updated
+  setCandidateProfile(updated)
+}
 
 async function loadResumes() {
   resumesLoading.value = true; resumeError.value = ''
@@ -138,8 +186,8 @@ async function removeResume(resume: ResumeRecord) {
 
 function fileSize(value: number) { return value < 1024 * 1024 ? `${Math.max(1, Math.round(value / 1024))} KB` : `${(value / 1024 / 1024).toFixed(1)} MB` }
 
-onMounted(() => { void loadProfile(); void loadResumes() })
-onBeforeUnmount(closePreview)
+onMounted(() => { void loadProfile(); void loadResumes(); void apiRequest<{ total: number }>('/applications/me?limit=1').then(result => { applicationCount.value = result.total }).catch(() => { applicationCount.value = null }) })
+onBeforeUnmount(() => { closePreview(); if (avatarUrl.value) URL.revokeObjectURL(avatarUrl.value) })
 </script>
 
 <template>
@@ -151,28 +199,30 @@ onBeforeUnmount(closePreview)
         <div class="identity-row">
           <div class="identity-main">
             <div class="avatar-wrap">
-              <div class="profile-avatar" aria-hidden="true">{{ initials }}</div>
+              <img v-if="avatarUrl" :src="avatarUrl" :alt="`${name}'s profile photo`" class="profile-avatar avatar-image" /><div v-else class="profile-avatar" aria-hidden="true">{{ initials }}</div>
             </div>
             <div class="identity-copy">
-              <div class="name-row"><h1 id="profile-name">{{ name }}</h1></div>
+              <div class="name-row"><h1 id="profile-name">{{ name }}</h1><span v-if="profile.isOpenToWork" class="availability"><i></i>Open to work</span></div>
               <p class="headline">{{ headline }}</p>
               <div class="identity-meta"><span><b aria-hidden="true">@</b>{{ currentUser.email }}</span><span><b aria-hidden="true">⌖</b>{{ location }}</span></div>
             </div>
           </div>
           <div class="overview-actions">
-            <button type="button" class="edit-profile-button" @click="editing ? cancelEditing() : startEditing()">{{ editing ? 'Cancel' : 'Edit profile' }}</button>
+            <button type="button" class="edit-profile-button" :disabled="!profileLoaded || saving" @click="editing ? cancelEditing() : startEditing()">{{ editing ? 'Cancel' : 'Edit profile' }}</button>
+            <label class="photo-control">{{ avatarBusy ? 'Updating photo…' : 'Change photo' }}<input type="file" accept="image/jpeg,image/png,image/webp" :disabled="avatarBusy || !profileLoaded" @change="uploadAvatar" /></label><button v-if="avatarUrl" class="quiet-button" :disabled="avatarBusy" @click="removeAvatar">Remove photo</button>
           </div>
         </div>
         <nav class="profile-shortcuts" aria-label="Profile navigation">
           <div><span>Profile complete</span><strong>{{ profileCompletion }}%</strong></div>
           <router-link to="/saved-jobs"><span>Saved jobs</span><strong>{{ savedJobIds.length }}</strong></router-link>
-          <router-link to="/applications"><span>Application drafts</span><strong>{{ applicationDrafts.length }}</strong></router-link>
+          <router-link to="/applications"><span>Applications</span><strong>{{ applicationCount ?? '—' }}</strong></router-link>
           <div><span>Skills</span><strong>{{ skills.length }}</strong></div>
         </nav>
       </section>
 
       <p v-if="success" class="feedback success-feedback" role="status">{{ success }}</p>
       <p v-if="error && !editing" class="feedback error-feedback" role="alert">{{ error }}</p>
+      <button v-if="!profileLoaded && error" class="quiet-button" @click="loadProfile">Retry loading profile</button>
 
       <form v-if="editing" class="profile-card edit-card" @submit.prevent="saveProfile">
         <header class="card-heading"><div><h2>Edit profile</h2><p>Keep the details concise and useful to recruiters.</p></div></header>
@@ -182,6 +232,10 @@ onBeforeUnmount(closePreview)
           <label class="wide-field">Professional headline<input v-model="form.headline" maxlength="160" placeholder="Product designer, frontend developer, student" /></label>
           <label class="wide-field">Location<input v-model="form.location" maxlength="160" autocomplete="address-level2" placeholder="City, country" /></label>
           <label class="wide-field">About you<textarea v-model="form.bio" rows="6" maxlength="2000" placeholder="Share your experience, strengths, and the work you want to explore." /><small>{{ form.bio.length.toLocaleString() }} / 2,000</small></label>
+          <label>Phone number<input v-model="contactForm.phone" type="tel" autocomplete="tel" maxlength="40" /></label>
+          <label>Website or portfolio<input v-model="contactForm.websiteUrl" type="url" maxlength="2048" placeholder="https://…" /></label>
+          <label>LinkedIn URL<input v-model="contactForm.linkedinUrl" type="url" maxlength="2048" placeholder="https://linkedin.com/in/…" /></label>
+          <label>GitHub URL<input v-model="contactForm.githubUrl" type="url" maxlength="2048" placeholder="https://github.com/…" /></label>
         </div>
         <p v-if="error" class="feedback error-feedback" role="alert">{{ error }}</p>
         <footer class="edit-actions"><button type="button" class="secondary-button" @click="cancelEditing">Discard</button><button type="submit" class="primary-button" :disabled="saving">{{ saving ? 'Saving…' : 'Save profile' }}</button></footer>
@@ -195,25 +249,19 @@ onBeforeUnmount(closePreview)
             <div v-else class="empty-state"><div><strong>Tell recruiters what you do best</strong><p>A focused introduction makes the rest of your profile easier to understand.</p></div><button type="button" class="text-link" @click="startEditing">Add an introduction</button></div>
           </section>
 
-          <section class="profile-card search-card" aria-labelledby="search-heading">
-            <header class="card-heading"><div><h2 id="search-heading">Your job search</h2><p>Resume your work without searching through account menus.</p></div></header>
-            <div class="search-links">
-              <router-link to="/saved-jobs"><span class="square-icon" aria-hidden="true">♡</span><span><strong>Saved jobs</strong><small>Review roles you want to compare.</small></span><b>{{ savedJobIds.length }}</b></router-link>
-              <router-link to="/applications"><span class="square-icon" aria-hidden="true">✎</span><span><strong>Application drafts</strong><small>Continue an application you started.</small></span><b>{{ applicationDrafts.length }}</b></router-link>
-            </div>
-          </section>
+          <ProfileBackground v-if="profileLoaded" id="background" :profile="profile" :initial-edit="!!route.query.background" @updated="applyBackground" />
 
-          <section class="profile-card resume-card" aria-labelledby="resume-heading">
+          <section id="resumes" class="profile-card resume-card" aria-labelledby="resume-heading">
             <header class="card-heading resume-heading"><div><h2 id="resume-heading">Your résumés</h2><p>Choose the PDF used for direct job applications.</p></div><label class="primary-button upload-button" :class="{ disabled: resumeUploading }">{{ resumeUploading ? 'Uploading…' : 'Upload PDF' }}<input type="file" accept="application/pdf,.pdf" :disabled="resumeUploading" @change="uploadResume" /></label></header>
             <p v-if="resumeSuccess" class="feedback success-feedback" role="status">{{ resumeSuccess }}</p><p v-if="resumeError" class="feedback error-feedback" role="alert">{{ resumeError }}</p>
             <p v-if="resumesLoading" class="resume-empty">Loading your résumés…</p>
             <div v-else-if="resumes.length" class="resume-list"><article v-for="resume in resumes" :key="resume.id" class="resume-row"><span class="pdf-icon" aria-hidden="true">PDF</span><div class="resume-copy"><strong>{{ resume.fileName }}</strong><span>{{ fileSize(resume.fileSize) }}<b v-if="resume.isDefault">Default</b></span></div><div class="resume-actions"><button type="button" @click="previewResume(resume)">Preview</button><button type="button" @click="downloadResume(resume)">Download</button><button v-if="!resume.isDefault" type="button" @click="makeDefault(resume)">Set default</button><button type="button" class="danger-action" @click="removeResume(resume)">Delete</button></div></article></div>
-            <label v-else class="resume-dropzone">Drag and drop is available from your browser, or <span>browse for a PDF</span><input type="file" accept="application/pdf,.pdf" :disabled="resumeUploading" @change="uploadResume" /></label>
+            <label v-else class="resume-dropzone">Keep your CV ready for your next opportunity. <span>Browse for a PDF</span><input type="file" accept="application/pdf,.pdf" :disabled="resumeUploading" @change="uploadResume" /></label>
           </section>
         </div>
 
         <aside class="side-column">
-          <section class="profile-card skills-card" aria-labelledby="skills-heading">
+          <section id="skills" class="profile-card skills-card" aria-labelledby="skills-heading">
             <header class="card-heading"><h2 id="skills-heading">Skills &amp; tech</h2><span class="count-chip">{{ skills.length }} added</span></header>
             <div class="skill-input-row"><label class="sr-only" for="skill-input">Add a skill, technology, or language</label><input id="skill-input" v-model="skillInput" maxlength="50" placeholder="Add a language or tool" :disabled="skillsSaving" @keydown.enter.prevent="addSkill()" /><button type="button" :disabled="skillsSaving || !skillInput.trim()" @click="addSkill()">Add</button></div>
             <p v-if="skillsError" class="feedback error-feedback" role="alert">{{ skillsError }}</p>
@@ -223,8 +271,9 @@ onBeforeUnmount(closePreview)
 
           <section class="profile-card preference-card" aria-labelledby="preference-heading">
             <header class="card-heading"><h2 id="preference-heading">Job preferences</h2><button type="button" class="quiet-button" @click="startEditing">Edit</button></header>
-            <dl><div><dt>Desired role</dt><dd>{{ headline }}</dd></div><div><dt>Preferred location</dt><dd>{{ location }}</dd></div><div><dt>Availability</dt><dd><span class="ready-chip">Open to opportunities</span></dd></div></dl>
+            <dl><div><dt>Desired role</dt><dd>{{ headline }}</dd></div><div><dt>Preferred location</dt><dd>{{ location }}</dd></div><div><dt>Availability</dt><dd>{{ profile.isOpenToWork ? 'Open to new opportunities' : 'Not actively looking' }}</dd></div></dl>
           </section>
+          <section class="profile-card preference-card"><header class="card-heading"><h2>Contact &amp; links</h2><button class="quiet-button" @click="startEditing">Edit</button></header><dl><div><dt>Email</dt><dd class="break-all">{{ currentUser.email }}</dd></div><div v-if="profile.phone"><dt>Phone</dt><dd>{{ profile.phone }}</dd></div><div v-for="link in [{ label: 'Portfolio', url: profile.websiteUrl }, { label: 'LinkedIn', url: profile.linkedinUrl }, { label: 'GitHub', url: profile.githubUrl }].filter(item => item.url)" :key="link.label"><dt>{{ link.label }}</dt><dd><a :href="link.url!" target="_blank" rel="noopener noreferrer" class="profile-external-link">{{ link.url }}</a></dd></div></dl></section>
         </aside>
       </div>
     </div>
@@ -234,6 +283,7 @@ onBeforeUnmount(closePreview)
 </template>
 
 <style scoped>
+.avatar-image { object-fit: cover; }.photo-control { display: grid; gap: 8px; color: #554487; font-size: 12px; }.photo-control input { max-width: 205px; font-size: 11px; }.availability-control { display: flex !important; align-items: center; gap: 10px !important; }.availability-control input { width: 17px !important; height: 17px; accent-color: #4930ce; }.resume-help { margin-top: 14px; color: #7b8399; font-size: 12px; line-height: 1.7; }.profile-external-link { color: #4d35cd; overflow-wrap: anywhere; }.profile-external-link:hover { text-decoration: underline; }.notification-link { display: flex; justify-content: space-between; color: #4d35cd; font-size: 14px; font-weight: 600; }.profile-page :is(button, a, input, textarea):focus-visible { outline: 2px solid #705aef; outline-offset: 3px; }.profile-page button:disabled { opacity: .5; cursor: wait; }.profile-page :is(button, a) { transition: background-color .18s, color .18s; }
 .profile-page { min-height: 80vh; padding: 24px 24px 80px; background: #f8f7fc; color: #131b3d; }
 .profile-shell { width: min(1180px, 100%); margin: 0 auto; }
 .back-link { display: inline-flex; align-items: center; gap: 7px; margin-bottom: 20px; color: #33406a; font-size: 13px; font-weight: 600; }
@@ -281,4 +331,9 @@ onBeforeUnmount(closePreview)
 @media (max-width: 900px) { .identity-row { align-items: flex-start; }.profile-layout { grid-template-columns: 1fr; }.overview-actions { min-width: 190px; }.side-column { grid-template-columns: repeat(2, 1fr); }.skills-card { grid-column: 1 / -1; } }
 @media (max-width: 680px) { .profile-page { padding: 18px 14px 60px; }.identity-row { display: grid; padding: 21px; }.identity-main { align-items: flex-start; }.profile-avatar { width: 70px; height: 70px; font-size: 21px; }.name-row h1 { font-size: 26px; }.headline { font-size: 14px; }.overview-actions { width: 100%; grid-template-columns: 1fr; }.profile-shortcuts { grid-template-columns: 1fr 1fr; margin: 0 14px 14px; }.profile-shortcuts > *:nth-child(3) { border-left: 0; border-top: 1px solid #dfdced; }.profile-shortcuts > *:nth-child(4) { border-top: 1px solid #dfdced; }.profile-card { padding: 18px; }.search-links, .side-column, .edit-fields { grid-template-columns: 1fr; }.edit-fields .wide-field { grid-column: auto; }.resume-row { grid-template-columns: 42px minmax(0, 1fr); }.resume-actions { grid-column: 1 / -1; justify-content: flex-start; padding-top: 8px; border-top: 1px solid #e4e0ef; } }
 @media (max-width: 430px) { .identity-main { display: grid; }.overview-actions { grid-template-columns: 1fr; }.profile-shortcuts > * { padding: 13px; }.resume-heading { align-items: flex-start; flex-direction: column; }.empty-state { align-items: flex-start; flex-direction: column; } }
+.photo-control { position: relative; display: flex; align-items: center; justify-content: center; min-height: 38px; border: 1px solid #ded8ed; border-radius: 8px; cursor: pointer; font-size: 13px; font-weight: 600; }
+.photo-control input { position: absolute; width: 1px; height: 1px; opacity: 0; }
+.photo-control:focus-within, .upload-button:focus-within, .resume-dropzone:focus-within { outline: 2px solid #705aef; outline-offset: 3px; }
+.skill-chips > span, .skill-input-row input, .skills-empty, .suggestions button, .quiet-button { font-size: 12px; }
+.identity-meta, .preference-card dd { font-size: 13px; }.profile-shortcuts span, .preference-card dt { font-size: 11px; }
 </style>

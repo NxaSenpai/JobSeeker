@@ -13,7 +13,7 @@ export type Job = {
   logo: string
   location: string
   workplace: 'Remote' | 'Hybrid' | 'On-site'
-  type: 'Full-time' | 'Part-time' | 'Contract'
+  type: 'Full-time' | 'Part-time' | 'Contract' | 'Internship' | 'Temporary' | 'Freelance'
   salary: string
   category: string
   posted: string
@@ -22,6 +22,10 @@ export type Job = {
   description: string
   responsibilities: string[]
   requirements: string[]
+  salaryValue?: number | null
+  companyProfile?: Company | null
+  isDemo?: boolean
+  deadline?: string | null
 }
 
 export type Company = {
@@ -38,6 +42,9 @@ export type Company = {
   website: string
   founded: string
   benefits: string[]
+  slug?: string
+  websiteUrl?: string
+  isVerified?: boolean
 }
 
 export const jobs: Job[] = [

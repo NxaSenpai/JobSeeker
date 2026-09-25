@@ -7,9 +7,36 @@ function session(role: Role = 'USER', seconds = 3600) {
   const encode = (value: unknown) => Buffer.from(JSON.stringify(value)).toString('base64url')
   return { user, accessToken: encode({ alg: 'HS256' }) + '.' + encode({ sub: user.id, exp: Math.floor(Date.now() / 1000) + seconds }) + '.browser-fixture' }
 }
+const accountDemoJobs = [
+  { id: 'product-designer', title: 'Senior Product Designer', company: 'Figma', location: 'London, United Kingdom', category: 'Design', workplaceType: 'HYBRID', jobType: 'FULL_TIME', skills: ['Product design', 'Figma', 'Design systems'], salaryMin: 85000, salaryMax: 110000 },
+  { id: 'growth-marketer', title: 'Growth Marketing Manager', company: 'Spotify', location: 'Remote — Europe', category: 'Marketing', workplaceType: 'REMOTE', jobType: 'FULL_TIME', skills: ['Growth strategy', 'Lifecycle', 'Analytics'], salaryMin: 70000, salaryMax: 92000 },
+  { id: 'full-stack-engineer', title: 'Full-Stack Engineer', company: 'Slack', location: 'Dublin, Ireland', category: 'Technology', workplaceType: 'HYBRID', jobType: 'FULL_TIME', skills: ['TypeScript', 'Node.js', 'React'], salaryMin: 78000, salaryMax: 105000 },
+  { id: 'content-strategist', title: 'Content Strategist', company: 'WordPress', location: 'Remote — Global', category: 'Marketing', workplaceType: 'REMOTE', jobType: 'CONTRACT', skills: ['Content strategy', 'SEO', 'Editorial'], salaryMin: 55000, salaryMax: 70000 },
+  { id: 'data-analyst', title: 'Product Data Analyst', company: 'App Store', location: 'Singapore', category: 'Analyst', workplaceType: 'ONSITE', jobType: 'FULL_TIME', skills: ['SQL', 'Experimentation', 'Tableau'], salaryMin: 60000, salaryMax: 82000 },
+  { id: 'community-manager', title: 'Community Manager', company: 'Telegram', location: 'Phnom Penh, Cambodia', category: 'Marketing', workplaceType: 'HYBRID', jobType: 'FULL_TIME', skills: ['Community', 'Social media', 'Events'], salaryMin: 28000, salaryMax: 40000 },
+  { id: 'brand-designer', title: 'Brand Designer', company: 'Pinterest', location: 'San Francisco, United States', category: 'Design', workplaceType: 'HYBRID', jobType: 'FULL_TIME', skills: ['Brand systems', 'Art direction', 'Motion'], salaryMin: 90000, salaryMax: 120000 },
+].map(job => ({
+  ...job,
+  companyProfile: null,
+  industry: job.category,
+  summary: `Join ${job.company} as a ${job.title}.`,
+  description: `Build thoughtful work with the ${job.company} team.`,
+  responsibilities: ['Collaborate with the team.'],
+  requirements: ['Bring relevant experience.'],
+  currency: 'USD',
+  salaryPeriod: 'YEAR',
+  postedAt: '2026-09-22T04:00:00.000Z',
+  isDemo: true,
+  deadline: null,
+}))
+const accountDemoCompany = {
+  id: 'figma', slug: 'figma', name: 'Figma', industry: 'Design software', companySize: '501–1,000 people',
+  foundedYear: 2012, location: 'London, United Kingdom', website: 'https://figma.com',
+  description: 'Figma makes collaborative design accessible to everyone.', logoUrl: null, isVerified: true, openJobs: 1,
+}
 async function mockAccount(context: BrowserContext, role: Role = 'USER') {
   const data = session(role)
-  const state = { data, profile: { skills: [] as string[] }, saved: new Set<string>(), drafts: new Map<string, { jobId: string; coverLetter: string; resumeUrl: string; updatedAt: string }>(), meStatus: 200, activityStatus: 200 }
+  const state = { data, profile: { skills: [] as string[] }, saved: new Set<string>(), drafts: new Map<string, { jobId: string; coverLetter: string; resumeUrl: string; updatedAt: string }>(), jobOverrides: new Map<string, (typeof accountDemoJobs)[number]>(), meStatus: 200, activityStatus: 200 }
   await context.route('**/api/v1/**', async route => {
     const req = route.request()
     const path = new URL(req.url()).pathname.replace('/api/v1', '')
@@ -21,6 +48,37 @@ async function mockAccount(context: BrowserContext, role: Role = 'USER') {
       return reply(data)
     }
     if (path === '/auth/me') return reply(state.meStatus === 200 ? { user: data.user } : { message: 'Account service unavailable.' }, state.meStatus)
+    if (path === '/jobs' && method === 'GET') {
+      const params = new URL(req.url()).searchParams
+      const search = params.get('search')?.toLowerCase() ?? ''
+      const workplace = params.get('workplaceType')
+      const jobType = params.get('jobType')
+      const category = params.get('category')
+      const matches = accountDemoJobs.filter(job =>
+        (!search || `${job.title} ${job.company} ${job.location} ${job.category} ${job.skills.join(' ')}`.toLowerCase().includes(search)) &&
+        (!workplace || job.workplaceType === workplace) &&
+        (!jobType || job.jobType === jobType) &&
+        (!category || job.category.toLowerCase() === category.toLowerCase()),
+      )
+      const page = Number(params.get('page') ?? 1); const limit = Number(params.get('limit') ?? 12)
+      return reply({ jobs: matches.slice((page - 1) * limit, page * limit), total: matches.length, page, limit })
+    }
+    if (path === '/jobs/featured' && method === 'GET') return reply({ jobs: accountDemoJobs.slice(0, 4) })
+    if (path === '/jobs/categories' && method === 'GET') {
+      const counts = new Map<string, number>()
+      for (const job of accountDemoJobs) counts.set(job.category, (counts.get(job.category) ?? 0) + 1)
+      return reply({ categories: [...counts].map(([name, count]) => ({ name, count })) })
+    }
+    if (path === '/jobs/product-designer/similar' && method === 'GET') return reply({ jobs: accountDemoJobs.filter(job => job.id !== 'product-designer' && job.category === 'Design') })
+    if (path.startsWith('/jobs/') && method === 'GET') {
+      const id = path.split('/').at(-1)!
+      const record = state.jobOverrides.get(id) ?? accountDemoJobs.find(job => job.id === id)
+      return record ? reply(record) : reply({ message: 'This job is no longer available.' }, 404)
+    }
+    if (path === '/companies/figma/jobs' && method === 'GET') return reply({ company: accountDemoCompany, jobs: accountDemoJobs.filter(job => job.company === 'Figma'), total: 1, page: 1, limit: 20 })
+    if (path === '/applications/me') return reply({ applications: [], total: 0 })
+    if (path === '/notifications') return reply({ notifications: [], total: 0 })
+    if (path === '/notifications/unread-count') return reply({ count: 0 })
     if (path.startsWith('/account/')) {
       if (!req.headers().authorization) return reply({ message: 'Sign in required.' }, 401)
       if (state.activityStatus !== 200) return reply({ message: 'Please try again shortly.' }, state.activityStatus)
@@ -119,6 +177,8 @@ test('account dropdown supports keyboard, outside click, and mobile layout', asy
 test('saved jobs persist across navigation and reload and can be removed', async ({ page, context }) => {
   const state = await mockAccount(context)
   await page.goto('/login'); await login(page)
+  await expect(page).toHaveURL('/')
+  await page.goto('/jobs')
   const card = page.locator('article').filter({ has: page.getByRole('link', { name: 'Senior Product Designer', exact: true }) })
   await card.getByRole('button', { name: 'Save job', exact: true }).click()
   await expect(card.getByRole('button', { name: 'Remove saved job' })).toHaveAttribute('aria-pressed', 'true')
@@ -130,6 +190,24 @@ test('saved jobs persist across navigation and reload and can be removed', async
   await page.getByRole('button', { name: 'Remove saved job' }).click()
   await expect(page.getByRole('heading', { name: 'Your shortlist starts here' })).toBeVisible()
   expect(state.saved.size).toBe(0)
+})
+
+test('saved-job and draft listings resolve real backend job details by ID', async ({ page, context }) => {
+  const state = await mockAccount(context)
+  const backendJob = { ...accountDemoJobs[0], id: 'backend-only-role', title: 'Platform Engineer', company: 'Northstar Labs', category: 'Software Development' }
+  state.jobOverrides.set(backendJob.id, backendJob)
+  state.saved.add(backendJob.id)
+  state.drafts.set(backendJob.id, { jobId: backendJob.id, coverLetter: 'A private draft.', resumeUrl: '', updatedAt: new Date().toISOString() })
+
+  await page.goto('/login'); await login(page)
+  await page.goto('/saved-jobs')
+  await expect(page.getByRole('link', { name: 'Platform Engineer', exact: true })).toBeVisible()
+  await expect(page.getByText('Northstar Labs', { exact: true })).toBeVisible()
+
+  await page.goto('/applications')
+  await expect(page.getByRole('heading', { name: 'Platform Engineer', exact: true })).toBeVisible()
+  await expect(page.getByText('Northstar Labs', { exact: true })).toBeVisible()
+  await expect(page.getByRole('link', { name: 'Continue draft', exact: true })).toHaveAttribute('href', '/jobs/backend-only-role/apply')
 })
 
 test('profile edits update the header immediately and survive refresh', async ({ page, context }) => {
@@ -162,12 +240,12 @@ test('guest application returns after login, saves a private draft and deletes i
   await login(page)
   await expect(page).toHaveURL('/jobs/product-designer/apply')
   await page.getByLabel('Cover letter').fill('I enjoy designing thoughtful products.')
-  await page.getByLabel('Résumé link').fill('https://example.com/resume.pdf')
+  await page.getByLabel('Application description').fill('I build thoughtful product experiences with accessible interfaces.')
   await page.getByRole('button', { name: 'Save draft', exact: true }).click()
   await expect(page.getByRole('status')).toContainText('Nothing has been sent to the employer.')
   await page.reload()
   await expect(page.getByLabel('Cover letter')).toHaveValue('I enjoy designing thoughtful products.')
-  await page.getByRole('link', { name: 'View all drafts' }).click()
+  await page.getByRole('link', { name: 'View applications and drafts' }).click()
   await expect(page.getByText('Draft · Not submitted', { exact: true })).toBeVisible()
   expect(state.drafts.size).toBe(1)
   await page.getByRole('button', { name: 'Delete', exact: true }).click()
@@ -238,8 +316,8 @@ test('remembered sign-out clears both tabs and protects private routes', async (
   await second.goto('/saved-jobs')
   await expect(second.getByRole('link', { name: 'Senior Product Designer', exact: true })).toBeVisible()
   await (await openMenu(page)).getByRole('menuitem', { name: 'Sign out' }).click()
-  await expect(page).toHaveURL('/')
-  await expect(page.locator('header').getByRole('link', { name: 'Sign In', exact: true })).toBeVisible()
+  await expect(page).toHaveURL(/\/login(?:\?.*)?$/)
+  await expect(page.getByRole('button', { name: 'Sign in', exact: true })).toBeVisible()
   await expect(second).toHaveURL(/\/login\?redirect=/)
   await page.goto('/profile')
   await expect(page).toHaveURL(/\/login\?redirect=/)
@@ -294,14 +372,14 @@ test('job categories customize the results page and filter controls apply clearl
   await expect(page.getByRole('link', { name: 'Full-Stack Engineer', exact: true })).toBeVisible()
 })
 
-test('signing out from a private page lands home and clears session storage', async ({ page, context }) => {
+test('signing out from a private page returns to sign-in and clears session storage', async ({ page, context }) => {
   await mockAccount(context)
   await page.goto('/login'); await login(page)
   await (await openMenu(page)).getByRole('menuitem', { name: 'View profile' }).click()
   await expect(page).toHaveURL('/profile')
   await (await openMenu(page)).getByRole('menuitem', { name: 'Sign out' }).click()
-  await expect(page).toHaveURL('/')
-  await expect(page.locator('header').getByRole('link', { name: 'Sign In', exact: true })).toBeVisible()
+  await expect(page).toHaveURL(/\/login(?:\?.*)?$/)
+  await expect(page.getByRole('button', { name: 'Sign in', exact: true })).toBeVisible()
   expect(await page.evaluate(key => sessionStorage.getItem(key), storageKey)).toBeNull()
 })
 
@@ -324,10 +402,10 @@ test('company profiles are candidate-facing and separate from the hiring dashboa
   await seed(context, session('COMPANY'))
   await page.goto('/companies/figma')
   await expect(page.getByRole('heading', { name: 'Figma', exact: true })).toBeVisible()
-  await expect(page.getByText('Candidate view', { exact: true })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'About Figma', exact: true })).toBeVisible()
   await expect(page.getByRole('heading', { name: 'Open roles', exact: true })).toBeVisible()
   await page.goto('/company/dashboard')
-  await expect(page.getByRole('heading', { name: 'Hiring overview', exact: true })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Hiring activity', exact: true })).toBeVisible()
   await expect(page.getByRole('button', { name: 'Company profile', exact: true })).toHaveCount(0)
   await page.goto('/companies/figma')
   await expect(page.getByRole('heading', { name: 'Company facts', exact: true })).toBeVisible()

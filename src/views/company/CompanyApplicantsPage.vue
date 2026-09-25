@@ -3,67 +3,165 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import CompanyPageHeader from '@/components/company/CompanyPageHeader.vue'
 import UiIcon from '@/components/company/UiIcon.vue'
 import {
-  companyApplicants,
-  companyJobs,
-  relativeApplicationDate,
-  updateApplicantStatus,
+  allowedApplicantStatusChanges,
+  applicantAvatarColor,
+  applicantInitials,
+  applicantName,
+  applicantStatusClass,
+  applicantStatusLabel,
+  applicantStatuses,
+  fetchCompanyApplicant,
+  fetchCompanyApplicants,
+  saveCompanyApplicantStatus,
   type ApplicantStatus,
+  type CompanyApplicantDetails,
+  type CompanyApplicantListItem,
+} from '@/services/companyApplicants'
+import {
+  relativeApplicationDate,
 } from '@/services/companyWorkspace'
 
 type ApplicantFilter = 'All' | ApplicantStatus
 
 const props = withDefaults(defineProps<{ search?: string }>(), { search: '' })
 const selectedFilter = ref<ApplicantFilter>('All')
+const applicants = ref<CompanyApplicantListItem[]>([])
+const total = ref(0)
+const page = ref(1)
+const pageSize = 20
+const loading = ref(true)
+const error = ref('')
 const selectedId = ref('')
-const statuses: ApplicantStatus[] = ['New', 'Under review', 'Interview', 'Shortlisted', 'Hired', 'Rejected']
+const selectedApplicant = ref<CompanyApplicantDetails | null>(null)
+const selectedCandidateSkills = computed(() => selectedApplicant.value?.candidate.skills ?? [])
+const detailLoading = ref(false)
+const detailError = ref('')
+const statusError = ref('')
+const statusMessage = ref('')
+const savingStatus = ref(false)
+const reviewCount = ref(0)
+let requestVersion = 0
+let searchTimer: ReturnType<typeof setTimeout> | undefined
 
 const filters = computed(() => [
-  { label: 'All' as const, count: companyApplicants.value.length },
-  ...statuses.map(label => ({ label, count: companyApplicants.value.filter(item => item.status === label).length })),
+  { value: 'All' as const, label: 'All' },
+  ...applicantStatuses.map(status => ({ value: status, label: applicantStatusLabel(status) })),
 ])
+const totalPages = computed(() => Math.max(1, Math.ceil(total.value / pageSize)))
+const allowedStatusOptions = computed(() => selectedApplicant.value
+  ? [selectedApplicant.value.status, ...allowedApplicantStatusChanges(selectedApplicant.value.status)]
+  : [])
 
-const filteredApplicants = computed(() => companyApplicants.value.filter(applicant => {
-  const matchesFilter = selectedFilter.value === 'All' || applicant.status === selectedFilter.value
-  const query = props.search.trim().toLocaleLowerCase()
-  const job = companyJobs.value.find(item => item.id === applicant.jobId)
-  const haystack = `${applicant.name} ${applicant.role} ${job?.title ?? ''} ${applicant.location} ${applicant.status} ${applicant.source}`
-  return matchesFilter && (!query || haystack.toLocaleLowerCase().includes(query))
-}))
+async function loadApplicants(targetPage = 1) {
+  const version = ++requestVersion
+  page.value = targetPage
+  loading.value = true
+  error.value = ''
+  try {
+    const result = await fetchCompanyApplicants({
+      page: targetPage,
+      limit: pageSize,
+      status: selectedFilter.value === 'All' ? undefined : selectedFilter.value,
+      search: props.search,
+    })
+    if (version !== requestVersion) return
+    applicants.value = result.applications
+    total.value = result.total
+    page.value = result.page
+  } catch (cause) {
+    if (version === requestVersion) {
+      error.value = cause instanceof Error ? cause.message : 'Unable to load applicants.'
+    }
+  } finally {
+    if (version === requestVersion) loading.value = false
+  }
+}
 
-const selectedApplicant = computed(() => companyApplicants.value.find(applicant => applicant.id === selectedId.value) ?? null)
-const selectedJob = computed(() => companyJobs.value.find(job => job.id === selectedApplicant.value?.jobId))
-const reviewCount = computed(() => companyApplicants.value.filter(applicant => applicant.status === 'New' || applicant.status === 'Under review').length)
+async function loadReviewCount() {
+  try {
+    const [newApplications, inReview] = await Promise.all([
+      fetchCompanyApplicants({ page: 1, limit: 1, status: 'APPLIED' }),
+      fetchCompanyApplicants({ page: 1, limit: 1, status: 'UNDER_REVIEW' }),
+    ])
+    reviewCount.value = newApplications.total + inReview.total
+  } catch {
+    // The applicant list remains usable if the optional summary request fails.
+  }
+}
 
 function chooseFilter(label: ApplicantFilter) {
   selectedFilter.value = label
+  void loadApplicants(1)
 }
 
-function openApplicant(id: string) {
-  selectedId.value = id
+async function openApplicant(applicant: CompanyApplicantListItem) {
+  selectedId.value = applicant.id
+  selectedApplicant.value = null
+  detailError.value = ''
+  statusError.value = ''
+  statusMessage.value = ''
+  detailLoading.value = true
+  try {
+    selectedApplicant.value = await fetchCompanyApplicant(applicant.id)
+  } catch (cause) {
+    detailError.value = cause instanceof Error ? cause.message : 'Unable to load this application.'
+  } finally {
+    detailLoading.value = false
+  }
 }
 
 function closeApplicant() {
   selectedId.value = ''
+  selectedApplicant.value = null
+  detailError.value = ''
 }
 
-function changeStatus(event: Event) {
+async function changeStatus(event: Event) {
   const status = (event.target as HTMLSelectElement).value as ApplicantStatus
-  if (selectedApplicant.value) updateApplicantStatus(selectedApplicant.value.id, status)
+  if (!selectedApplicant.value || status === selectedApplicant.value.status || savingStatus.value) return
+  const previousStatus = selectedApplicant.value.status
+  statusError.value = ''
+  statusMessage.value = ''
+  savingStatus.value = true
+  try {
+    selectedApplicant.value = await saveCompanyApplicantStatus(selectedApplicant.value.id, status)
+    const wasNeedsReview = ['APPLIED', 'UNDER_REVIEW'].includes(previousStatus)
+    const isNeedsReview = ['APPLIED', 'UNDER_REVIEW'].includes(status)
+    if (wasNeedsReview !== isNeedsReview) {
+      reviewCount.value = Math.max(0, reviewCount.value + (isNeedsReview ? 1 : -1))
+    }
+    statusMessage.value = 'Application stage saved.'
+    await loadApplicants(page.value)
+  } catch (cause) {
+    statusError.value = cause instanceof Error ? cause.message : 'Unable to update the application stage.'
+  } finally {
+    savingStatus.value = false
+  }
 }
 
-function statusClass(status: string) {
-  return `status-${status.toLowerCase().replaceAll(' ', '-')}`
+function statusClass(status: ApplicantStatus) {
+  return applicantStatusClass(status)
 }
 
 function handleEscape(event: KeyboardEvent) {
-  if (event.key === 'Escape' && selectedApplicant.value) closeApplicant()
+  if (event.key === 'Escape' && selectedId.value) closeApplicant()
 }
 
-watch(selectedApplicant, applicant => {
-  document.body.style.overflow = applicant ? 'hidden' : ''
+watch(selectedId, id => {
+  document.body.style.overflow = id ? 'hidden' : ''
 })
-onMounted(() => window.addEventListener('keydown', handleEscape))
+watch(() => props.search, () => {
+  if (searchTimer) clearTimeout(searchTimer)
+  searchTimer = setTimeout(() => void loadApplicants(1), 250)
+})
+onMounted(() => {
+  window.addEventListener('keydown', handleEscape)
+  void loadApplicants(1)
+  void loadReviewCount()
+})
 onBeforeUnmount(() => {
+  requestVersion++
+  if (searchTimer) clearTimeout(searchTimer)
   document.body.style.overflow = ''
   window.removeEventListener('keydown', handleEscape)
 })
@@ -80,37 +178,42 @@ onBeforeUnmount(() => {
     <section class="candidate-directory" aria-labelledby="candidate-list-heading">
       <header class="directory-heading">
         <div><h3 id="candidate-list-heading">Candidate list</h3><p>Open a candidate to review their complete profile.</p></div>
-        <span>{{ filteredApplicants.length }} of {{ companyApplicants.length }}</span>
+        <span>{{ total }} application{{ total === 1 ? '' : 's' }}</span>
       </header>
 
       <div class="applicant-filters" role="group" aria-label="Filter applicants by stage">
         <button
           v-for="filter in filters"
-          :key="filter.label"
+          :key="filter.value"
           type="button"
-          :aria-pressed="selectedFilter === filter.label"
-          :class="{ active: selectedFilter === filter.label }"
-          @click="chooseFilter(filter.label)"
+          :aria-pressed="selectedFilter === filter.value"
+          :class="{ active: selectedFilter === filter.value }"
+          @click="chooseFilter(filter.value)"
         >
-          {{ filter.label }} <span>{{ filter.count }}</span>
+          {{ filter.label }}
         </button>
       </div>
 
-      <div v-if="filteredApplicants.length" class="candidate-table">
+      <p v-if="loading" class="applicant-feedback" role="status">Loading applications…</p>
+      <div v-else-if="error" class="applicant-feedback applicant-error" role="alert">
+        <span>{{ error }}</span><button type="button" @click="loadApplicants(page)">Try again</button>
+      </div>
+
+      <div v-else-if="applicants.length" class="candidate-table">
         <div class="table-heading" aria-hidden="true">
           <span>Candidate</span><span>Applied role</span><span>Location</span><span>Applied</span><span>Stage</span><span></span>
         </div>
         <ul>
-          <li v-for="applicant in filteredApplicants" :key="applicant.id">
-            <button type="button" class="candidate-row" :aria-label="`Review ${applicant.name}`" @click="openApplicant(applicant.id)">
+          <li v-for="applicant in applicants" :key="applicant.id">
+            <button type="button" class="candidate-row" :aria-label="`Review ${applicantName(applicant)}`" @click="openApplicant(applicant)">
               <span class="candidate-cell">
-                <span class="candidate-avatar" :class="`avatar-${applicant.color}`">{{ applicant.initials }}</span>
-                <span class="candidate-name"><strong>{{ applicant.name }}</strong><small>{{ applicant.experience }}</small></span>
+                <span class="candidate-avatar" :class="`avatar-${applicantAvatarColor(applicant.id)}`">{{ applicantInitials(applicant) }}</span>
+                <span class="candidate-name"><strong>{{ applicantName(applicant) }}</strong><small>{{ applicant.candidate.headline || 'No headline provided' }}</small></span>
               </span>
-              <span class="role-cell"><strong>{{ companyJobs.find(job => job.id === applicant.jobId)?.title ?? applicant.role }}</strong><small>{{ applicant.source }}</small></span>
-              <span class="location-cell">{{ applicant.location }}</span>
+              <span class="role-cell"><strong>{{ applicant.job.title }}</strong><small>{{ applicant.job.company }}</small></span>
+              <span class="location-cell">{{ applicant.candidate.location || applicant.job.location || 'Not provided' }}</span>
               <span class="applied-cell">{{ relativeApplicationDate(applicant.appliedAt) }}</span>
-              <span class="applicant-status" :class="statusClass(applicant.status)">{{ applicant.status }}</span>
+              <span class="applicant-status" :class="statusClass(applicant.status)">{{ applicantStatusLabel(applicant.status) }}</span>
               <span class="open-profile"><span>View profile</span><UiIcon name="chevron" :size="17" /></span>
             </button>
           </li>
@@ -118,75 +221,86 @@ onBeforeUnmount(() => {
       </div>
 
       <div v-else class="candidate-empty">
-        <strong>No matching candidates</strong>
-        <p>Try another stage or clear the search field.</p>
-        <button type="button" @click="chooseFilter('All')">Show all candidates</button>
+        <strong>{{ props.search || selectedFilter !== 'All' ? 'No matching applications' : 'No applications yet' }}</strong>
+        <p>{{ props.search || selectedFilter !== 'All' ? 'Try another stage or clear the search field.' : 'Applications will appear here when a candidate applies to one of your jobs.' }}</p>
+        <button v-if="props.search || selectedFilter !== 'All'" type="button" @click="chooseFilter('All')">Show all applications</button>
       </div>
+
+      <nav v-if="!loading && !error && totalPages > 1" class="applicant-pagination" aria-label="Applicant pages">
+        <button type="button" :disabled="page <= 1" @click="loadApplicants(page - 1)">Previous</button>
+        <span>Page {{ page }} of {{ totalPages }}</span>
+        <button type="button" :disabled="page >= totalPages" @click="loadApplicants(page + 1)">Next</button>
+      </nav>
     </section>
 
     <Teleport to="body">
-      <div v-if="selectedApplicant" class="candidate-modal-backdrop" @mousedown.self="closeApplicant">
-        <section class="candidate-modal" role="dialog" aria-modal="true" :aria-labelledby="`candidate-name-${selectedApplicant.id}`">
+      <div v-if="selectedId" class="candidate-modal-backdrop" @mousedown.self="closeApplicant">
+        <section class="candidate-modal" role="dialog" aria-modal="true" aria-label="Candidate application details">
           <header class="modal-toolbar">
             <div><span>Candidate profile</span><small>Application details</small></div>
             <button type="button" aria-label="Close candidate profile" @click="closeApplicant"><UiIcon name="close" :size="20" /></button>
           </header>
 
-          <div class="modal-scroll">
+          <p v-if="detailLoading" class="applicant-feedback" role="status">Loading application details…</p>
+          <div v-else-if="detailError" class="applicant-feedback applicant-error" role="alert">{{ detailError }}</div>
+
+          <div v-else-if="selectedApplicant" class="modal-scroll">
             <div class="candidate-identity">
               <div class="identity-main">
-                <span class="candidate-avatar avatar-large" :class="`avatar-${selectedApplicant.color}`">{{ selectedApplicant.initials }}</span>
+                <span class="candidate-avatar avatar-large" :class="`avatar-${applicantAvatarColor(selectedApplicant.id)}`">{{ applicantInitials(selectedApplicant) }}</span>
                 <div>
                   <h3 :id="`candidate-name-${selectedApplicant.id}`">
                     <RouterLink
                       :to="{ name: 'CompanyApplicantProfilePage', params: { id: selectedApplicant.id } }"
-                      :aria-label="`Open ${selectedApplicant.name}'s full profile`"
+                      :aria-label="`Open ${applicantName(selectedApplicant)}'s full profile`"
                       @click="closeApplicant"
                     >
-                      {{ selectedApplicant.name }}
+                      {{ applicantName(selectedApplicant) }}
                     </RouterLink>
                   </h3>
-                  <p>{{ selectedApplicant.experience }}</p>
+                  <p>{{ selectedApplicant.candidate.headline || 'Candidate profile' }}</p>
                 </div>
               </div>
-              <span class="applicant-status identity-status" :class="statusClass(selectedApplicant.status)">{{ selectedApplicant.status }}</span>
+              <span class="applicant-status identity-status" :class="statusClass(selectedApplicant.status)">{{ applicantStatusLabel(selectedApplicant.status) }}</span>
             </div>
 
             <dl class="candidate-facts">
-              <div><dt>Applied for</dt><dd>{{ selectedJob?.title ?? selectedApplicant.role }}</dd></div>
-              <div><dt>Location</dt><dd>{{ selectedApplicant.location }}</dd></div>
+              <div><dt>Applied for</dt><dd>{{ selectedApplicant.job.title }}</dd></div>
+              <div><dt>Location</dt><dd>{{ selectedApplicant.candidate.location || selectedApplicant.job.location || 'Not provided' }}</dd></div>
               <div><dt>Applied</dt><dd>{{ relativeApplicationDate(selectedApplicant.appliedAt) }}</dd></div>
-              <div><dt>Source</dt><dd>{{ selectedApplicant.source }}</dd></div>
+              <div><dt>Email</dt><dd>{{ selectedApplicant.contact.email || 'Not shared' }}</dd></div>
             </dl>
 
             <div class="modal-content">
               <div class="profile-main">
                 <section aria-labelledby="profile-note-heading">
                   <h4 id="profile-note-heading">Profile note</h4>
-                  <p>{{ selectedApplicant.summary }}</p>
+                  <p>{{ selectedApplicant.candidate.bio || 'The candidate has not added a profile summary.' }}</p>
                 </section>
                 <section aria-labelledby="application-context-heading">
                   <h4 id="application-context-heading">Application context</h4>
-                  <p>{{ selectedApplicant.name }} applied for {{ selectedJob?.title ?? selectedApplicant.role }} from {{ selectedApplicant.location }}.</p>
+                  <p>{{ selectedApplicant.description || selectedApplicant.coverLetter || 'No introduction was included with this application.' }}</p>
                 </section>
               </div>
 
               <aside class="profile-aside">
                 <section aria-labelledby="candidate-skills-heading">
-                  <div class="section-title-row"><h4 id="candidate-skills-heading">Relevant skills</h4><span>{{ selectedApplicant.skills.length }}</span></div>
-                  <div class="skill-list"><span v-for="skill in selectedApplicant.skills" :key="skill">{{ skill }}</span></div>
+                  <div class="section-title-row"><h4 id="candidate-skills-heading">Relevant skills</h4><span>{{ selectedCandidateSkills.length }}</span></div>
+                  <div class="skill-list"><span v-for="skill in selectedCandidateSkills" :key="skill">{{ skill }}</span><span v-if="!selectedCandidateSkills.length">No skills listed</span></div>
                 </section>
                 <label class="stage-control">
                   <span>Application stage</span>
-                  <select :value="selectedApplicant.status" @change="changeStatus">
-                    <option v-for="status in statuses" :key="status">{{ status }}</option>
+                  <select :value="selectedApplicant.status" :disabled="savingStatus || allowedStatusOptions.length === 1" aria-label="Application stage" @change="changeStatus">
+                    <option v-for="status in allowedStatusOptions" :key="status" :value="status">{{ applicantStatusLabel(status) }}</option>
                   </select>
                 </label>
+                <p v-if="statusError" class="status-feedback status-error" role="alert">{{ statusError }}</p>
+                <p v-else-if="statusMessage" class="status-feedback" role="status">{{ statusMessage }}</p>
               </aside>
             </div>
           </div>
 
-          <footer class="modal-actions">
+          <footer v-if="selectedApplicant" class="modal-actions">
             <p>   </p>
             <button type="button" @click="closeApplicant">Done</button>
           </footer>
@@ -229,15 +343,23 @@ onBeforeUnmount(() => {
 .candidate-name strong, .role-cell strong { overflow: hidden; color: #172653; font-size: 13px; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
 .candidate-name small, .role-cell small { overflow: hidden; color: #7b85a3; font-size: 10px; font-weight: 450; text-overflow: ellipsis; white-space: nowrap; }
 .location-cell, .applied-cell { overflow: hidden; color: #526184; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
-.applicant-status { width: max-content; padding: 6px 9px; border-radius: 6px; font-size: 11px; font-weight: 650; white-space: nowrap; }
-.status-new { background: #f2efff; color: #5b46cd; }
-.status-under-review { background: #eaf1ff; color: #355b9c; }
-.status-interview { background: #e7f7f4; color: #287966; }
-.status-shortlisted { background: #eeeaff; color: #5540c3; }
-.status-hired { background: #e9f7ef; color: #26734d; }
-.status-rejected { background: #fff0f1; color: #9b5262; }
+.applicant-status { width: max-content; min-height: 28px; padding: 5px 10px; border: 1px solid; border-radius: 999px; display: inline-flex; align-items: center; font-size: 11px; font-weight: 650; letter-spacing: .01em; line-height: 1; white-space: nowrap; }
+.status-new { border-color: #b6d5ef; background: #f1f7ff; color: #21649f; }
+.status-under-review { border-color: #c6d4ed; background: #f5f8ff; color: #45628e; }
+.status-interview { border-color: #b5e1d5; background: #effaf7; color: #227565; }
+.status-shortlisted { border-color: #d0c4f2; background: #f7f3ff; color: #5b46c6; }
+.status-offer-sent { border-color: #f0d5a7; background: #fff9eb; color: #8b6420; }
+.status-hired { border-color: #b8e1c5; background: #f0faf3; color: #2f7b4e; }
+.status-rejected { border-color: #ebc3ca; background: #fff4f5; color: #a04e5b; }
+.status-withdrawn { border-color: #d8dbe5; background: #f5f6f9; color: #65708a; }
 .open-profile { display: inline-flex; align-items: center; justify-content: flex-end; gap: 6px; color: #5947bc; font-size: 11px; font-weight: 650; white-space: nowrap; }
 .open-profile :deep(svg) { transform: rotate(0deg); }
+.applicant-feedback { min-height: 220px; margin: 0; padding: 28px; display: grid; place-content: center; justify-items: center; gap: 12px; color: #677391; font-size: 13px; text-align: center; }
+.applicant-error { color: #9b4653; }
+.applicant-error button { min-height: 36px; padding: 0 13px; border: 1px solid #d8c9f1; border-radius: 7px; background: #fff; color: #5541bc; font-size: 12px; font-weight: 650; cursor: pointer; }
+.applicant-pagination { min-height: 64px; padding: 12px 20px; border-top: 1px solid #efedf6; display: flex; align-items: center; justify-content: center; gap: 18px; color: #697492; font-size: 12px; }
+.applicant-pagination button { min-height: 34px; padding: 0 12px; border: 1px solid #ddd9eb; border-radius: 7px; background: #fff; color: #5143a2; font: inherit; font-weight: 650; cursor: pointer; }
+.applicant-pagination button:disabled { color: #a3a8b8; cursor: not-allowed; }
 .candidate-empty { min-height: 300px; padding: 40px; display: grid; place-content: center; justify-items: center; text-align: center; }
 .candidate-empty strong { color: var(--ink); font-size: 17px; }
 .candidate-empty p { margin: 7px 0 0; color: var(--muted); font-size: 13px; }
@@ -281,6 +403,8 @@ onBeforeUnmount(() => {
 .stage-control select { width: 100%; min-height: 41px; padding: 0 10px; border: 1px solid #dcd7ed; border-radius: 8px; background: #fff; color: #263458; font: inherit; font-size: 12px; outline: 0; }
 .stage-control select:focus { border-color: #7560e0; box-shadow: 0 0 0 3px #6d51d914; }
 .stage-control small { color: #8a91a6; font-size: 9px; font-weight: 450; }
+.status-feedback { margin: 10px 0 0; color: #347553; font-size: 11px; line-height: 1.5; }
+.status-error { color: #a34d59; }
 .modal-actions { min-height: 69px; padding: 13px 22px 13px 26px; border-top: 1px solid #ebe8f3; display: flex; align-items: center; justify-content: space-between; gap: 18px; background: #fcfbff; }
 .modal-actions p { margin: 0; color: #7a839b; font-size: 10px; }
 .modal-actions button { min-width: 104px; min-height: 40px; padding: 0 15px; border: 0; border-radius: 8px; background: #4930ce; color: #fff; font-size: 12px; font-weight: 700; cursor: pointer; }

@@ -45,6 +45,7 @@ const icons = {
   download: { paths: ['M12 3v12m0 0 4-4m-4 4-4-4M5 20h14'] },
   close: { paths: ['m6 6 12 12M18 6 6 18'] },
   menu: { paths: ['M4 7h16M4 12h16M4 17h16'] },
+  moon: { paths: ['M20.5 15.4A8.8 8.8 0 0 1 8.6 3.5 8.9 8.9 0 1 0 20.5 15.4Z'] },
 } satisfies Record<string, IconDefinition>
 
 const icon = computed<IconDefinition>(() => icons[props.name as keyof typeof icons] ?? icons.help)

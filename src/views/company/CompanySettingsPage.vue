@@ -1,35 +1,40 @@
 <script setup lang="ts">
 import { reactive, ref } from 'vue'
 import CompanyPageHeader from '@/components/company/CompanyPageHeader.vue'
+import UiIcon from '@/components/company/UiIcon.vue'
 import { getAuthSession } from '@/services/auth'
 import { readCompanySettings, saveCompanySettings, type CompanySettings } from '@/services/companySettings'
+import { setCompanyDarkMode } from '@/services/companyTheme'
 
 const user = getAuthSession()?.user
 const settings = reactive<CompanySettings>(readCompanySettings(user))
 const saved = ref(false)
 
 function saveSettings() {
+  setCompanyDarkMode(settings.darkMode)
   saved.value = saveCompanySettings({ ...settings })
+}
+
+function applyDarkMode() {
+  setCompanyDarkMode(settings.darkMode)
+  saved.value = saveCompanySettings({ ...readCompanySettings(user), darkMode: settings.darkMode })
 }
 </script>
 
 <template>
   <div class="company-page settings-page">
-    <CompanyPageHeader eyebrow="Account / Settings" title="Company settings" description="Keep your company details and hiring notifications up to date." />
+    <CompanyPageHeader eyebrow="Account / Settings" title="Company settings" description="Tune your workspace appearance and hiring notifications." />
 
     <form class="settings-form" @submit.prevent="saveSettings">
-      <section class="settings-section profile-section" aria-labelledby="company-profile-title">
-        <div class="section-intro"><h3 id="company-profile-title">Company profile</h3><p>These details help candidates understand who is hiring.</p></div>
-        <div class="field-grid">
-          <label>Company name<input v-model="settings.companyName" required maxlength="100" autocomplete="organization" /></label>
-          <label>Industry<input v-model="settings.industry" maxlength="100" placeholder="Software, finance, healthcare" /></label>
-          <label>Company size<select v-model="settings.companySize"><option value="">Select team size</option><option>1–10 people</option><option>11–50 people</option><option>51–200 people</option><option>201–500 people</option><option>501–1,000 people</option><option>1,001–5,000 people</option><option>5,001+ people</option></select></label>
-          <label>Founded<input v-model="settings.founded" inputmode="numeric" maxlength="4" placeholder="2020" /></label>
-          <label>Website<input v-model="settings.website" type="url" placeholder="https://company.com" autocomplete="url" /></label>
-          <label>Location<input v-model="settings.location" maxlength="100" placeholder="City, country" autocomplete="address-level2" /></label>
-          <label>Public contact<input v-model="settings.contactEmail" type="email" autocomplete="email" /></label>
-          <label class="field-wide">About the company<textarea v-model="settings.description" rows="4" maxlength="600" placeholder="What does your team work on?" /></label>
-        </div>
+      <section class="settings-section appearance-section" aria-labelledby="appearance-title">
+        <div class="section-intro"><h3 id="appearance-title">Appearance</h3><p>Choose the workspace theme that feels best for your day-to-day hiring work.</p></div>
+        <label class="preference-row appearance-row">
+          <span class="appearance-copy"><span class="appearance-title"><UiIcon name="moon" :size="17" />Dark mode</span><small>Use a darker canvas and softer contrast across the company workspace.</small></span>
+          <span class="theme-switch">
+            <input v-model="settings.darkMode" type="checkbox" aria-label="Turn on dark mode" @change="applyDarkMode" />
+            <span class="theme-switch-track" aria-hidden="true"><span /></span>
+          </span>
+        </label>
       </section>
 
       <section class="settings-section hiring-section" aria-labelledby="hiring-preferences-title">
@@ -51,7 +56,7 @@ function saveSettings() {
 
 <style scoped>
 .company-page { color: var(--ink); }
-.settings-form { max-width: 920px; border: 1px solid var(--line); border-radius: 11px; background: #fff; box-shadow: 0 8px 24px rgb(11 43 130 / 4%); }
+.settings-form { max-width: 920px; border: 1px solid var(--line); border-radius: 11px; background: var(--surface-raised); box-shadow: 0 8px 24px rgb(11 43 130 / 4%); }
 .settings-section { padding: 23px 26px 25px; }
 .settings-section + .settings-section { border-top: 1px solid var(--line); }
 .section-intro { margin-bottom: 19px; }
@@ -60,16 +65,26 @@ function saveSettings() {
 .field-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px 18px; }
 .field-grid label { min-width: 0; display: grid; gap: 7px; color: #52669e; font-size: 12px; font-weight: 600; }
 .field-grid .field-wide { grid-column: 1 / -1; }
-.field-grid input, .field-grid textarea, .field-grid select { width: 100%; min-height: 40px; padding: 9px 11px; border: 1px solid #dedaf0; border-radius: 7px; background: #fff; color: var(--ink); font: inherit; font-size: 13px; font-weight: 400; outline: 0; }
+.field-grid input, .field-grid textarea, .field-grid select { width: 100%; min-height: 40px; padding: 9px 11px; border: 1px solid var(--line-strong); border-radius: 7px; background: var(--surface); color: var(--ink); font: inherit; font-size: 13px; font-weight: 400; outline: 0; }
 .field-grid textarea { resize: vertical; line-height: 1.6; }
 .field-grid input::placeholder, .field-grid textarea::placeholder { color: #9aa4c2; }
 .field-grid :is(input, textarea, select):focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgb(123 102 255 / 12%); }
-.preference-row { min-height: 57px; padding: 10px 0; border-top: 1px solid #f0eef9; display: flex; align-items: center; justify-content: space-between; gap: 18px; cursor: pointer; }
+.preference-row { min-height: 57px; padding: 10px 0; border-top: 1px solid var(--line); display: flex; align-items: center; justify-content: space-between; gap: 18px; cursor: pointer; }
 .preference-row > span { display: grid; gap: 4px; }
 .preference-row strong { color: var(--ink-soft); font-size: 13px; font-weight: 600; }
 .preference-row small { color: var(--muted); font-size: 11px; }
 .preference-row input { width: 16px; height: 16px; flex: 0 0 16px; accent-color: var(--accent); cursor: pointer; }
-.settings-footer { min-height: 68px; padding: 13px 26px; border-top: 1px solid var(--line); display: flex; align-items: center; justify-content: space-between; gap: 18px; background: #fcfbff; }
+.appearance-copy { min-width: 0; }
+.appearance-title { display: flex; align-items: center; gap: 8px; color: var(--ink); font-size: 13px; font-weight: 600; }
+.appearance-title .ui-icon { color: var(--accent-dark); }
+.theme-switch { position: relative; width: 44px; height: 25px; flex: 0 0 44px; display: block !important; }
+.theme-switch input { position: absolute; inset: 0; z-index: 1; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: pointer; }
+.theme-switch-track { position: absolute; inset: 0; display: block !important; border-radius: 999px; background: var(--line-strong); transition: background 180ms ease; }
+.theme-switch-track span { position: absolute; top: 4px; left: 4px; width: 17px; height: 17px; border-radius: 50%; background: #fff; box-shadow: 0 2px 5px rgb(22 30 50 / 18%); transition: transform 180ms ease; }
+.theme-switch input:checked + .theme-switch-track { background: var(--accent); }
+.theme-switch input:checked + .theme-switch-track span { transform: translateX(19px); }
+.theme-switch input:focus-visible + .theme-switch-track { outline: 3px solid rgb(123 102 255 / 30%); outline-offset: 3px; }
+.settings-footer { min-height: 68px; padding: 13px 26px; border-top: 1px solid var(--line); display: flex; align-items: center; justify-content: space-between; gap: 18px; background: var(--surface); }
 .settings-footer p { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.5; }
 .save-button { min-height: 39px; padding: 0 15px; border: 0; border-radius: 7px; background: var(--accent); color: #fff; font-size: 13px; font-weight: 600; cursor: pointer; transition: background 160ms ease, transform 160ms ease; }
 .save-button:hover { background: #6f5cf9; transform: translateY(-1px); }

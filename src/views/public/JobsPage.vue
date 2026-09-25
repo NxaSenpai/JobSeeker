@@ -1,13 +1,15 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import JobCard from '@/components/public/JobCard.vue'
-import { jobs } from '@/data/catalog'
+import type { Job } from '@/data/catalog'
+import { listPublicJobs } from '@/services/publicCatalog'
+import { ApiRequestError } from '@/services/api'
 
 const route = useRoute()
 const router = useRouter()
 const workplaceOptions = ['All', 'Remote', 'Hybrid', 'On-site'] as const
-const jobTypeOptions = ['All', 'Full-time', 'Part-time', 'Contract'] as const
+const jobTypeOptions = ['All', 'Full-time', 'Part-time', 'Contract', 'Internship', 'Temporary', 'Freelance'] as const
 const search = ref('')
 const appliedSearch = ref('')
 const workplace = ref<(typeof workplaceOptions)[number]>('All')
@@ -16,6 +18,14 @@ const jobType = ref<(typeof jobTypeOptions)[number]>('All')
 const appliedJobType = ref<(typeof jobTypeOptions)[number]>('All')
 const sort = ref('Newest')
 const resultStatus = ref('')
+const jobs = ref<Job[]>([])
+const totalJobs = ref(0)
+const currentPage = ref(1)
+const pageSize = 12
+const loading = ref(true)
+const loadError = ref('')
+let requestNumber = 0
+let activeController: AbortController | undefined
 
 function queryString(value: unknown) {
   return typeof value === 'string' ? value : ''
@@ -33,42 +43,84 @@ function syncFromRoute() {
   appliedWorkplace.value = workplace.value
   jobType.value = queryOption(route.query.type, jobTypeOptions, 'All')
   appliedJobType.value = jobType.value
+  sort.value = queryOption(route.query.sort, ['Newest', 'Salary high to low', 'Salary low to high'] as const, 'Newest')
+  currentPage.value = 1
+  void loadJobs()
 }
 
-watch(() => [route.query.q, route.query.workplace, route.query.type], syncFromRoute, { immediate: true })
+const categoryOptions = computed(() => [...new Set(jobs.value.map(job => job.category).filter(Boolean))])
+const activeCategory = computed(() => categoryOptions.value.find(category => category.toLowerCase() === appliedSearch.value.trim().toLowerCase()) || '')
 
-const categoryOptions = computed(() => [...new Set(jobs.map(job => job.category))])
-const activeCategory = computed(() => {
-  const normalized = appliedSearch.value.trim().toLowerCase()
-  return categoryOptions.value.find(category => category.toLowerCase() === normalized) ?? ''
-})
-
-const filteredJobs = computed(() => {
-  const keyword = appliedSearch.value.trim().toLowerCase()
-  return [...jobs]
-    .filter((job) => !keyword || (activeCategory.value ? job.category === activeCategory.value : [job.title, job.company, job.location, job.category, ...job.skills].join(' ').toLowerCase().includes(keyword)))
-    .filter((job) => appliedWorkplace.value === 'All' || job.workplace === appliedWorkplace.value)
-    .filter((job) => appliedJobType.value === 'All' || job.type === appliedJobType.value)
-    .sort((a, b) => sort.value === 'Salary' ? b.salary.localeCompare(a.salary) : 0)
-})
-
+const pageCount = computed(() => Math.max(1, Math.ceil(totalJobs.value / pageSize)))
 const pageEyebrow = computed(() => activeCategory.value ? `${activeCategory.value} roles` : 'Opportunity, on your terms')
 const pageDescription = computed(() => activeCategory.value ? `Browse current ${activeCategory.value.toLowerCase()} openings from teams building thoughtful products.` : 'Explore carefully selected roles from teams building thoughtful, ambitious products.')
-const resultCountLabel = computed(() => `${filteredJobs.value.length} ${activeCategory.value ? activeCategory.value.toLowerCase() : ''} ${filteredJobs.value.length === 1 ? 'role' : 'roles'}`.replace('  ', ' ').trim())
+const resultCountLabel = computed(() => `${totalJobs.value} ${activeCategory.value ? activeCategory.value.toLowerCase() : ''} ${totalJobs.value === 1 ? 'role' : 'roles'}`.replace('  ', ' ').trim())
 const filtersDirty = computed(() => search.value.trim() !== appliedSearch.value.trim() || workplace.value !== appliedWorkplace.value || jobType.value !== appliedJobType.value)
 
+watch(() => [route.query.q, route.query.workplace, route.query.type, route.query.sort], syncFromRoute, { immediate: true })
+
+async function loadJobs() {
+  const requestId = ++requestNumber
+  activeController?.abort()
+  const controller = new AbortController()
+  activeController = controller
+  loading.value = true
+  loadError.value = ''
+  try {
+    const workplaceMap: Record<string, string> = { Remote: 'REMOTE', Hybrid: 'HYBRID', 'On-site': 'ONSITE' }
+    const typeMap: Record<string, string> = {
+      'Full-time': 'FULL_TIME', 'Part-time': 'PART_TIME', Contract: 'CONTRACT',
+      Internship: 'INTERNSHIP', Temporary: 'TEMPORARY', Freelance: 'FREELANCE',
+    }
+    const category = activeCategory.value
+    const result = await listPublicJobs({
+      page: currentPage.value,
+      limit: pageSize,
+      search: appliedSearch.value && !category ? appliedSearch.value : undefined,
+      category: category || undefined,
+      workplaceType: workplaceMap[appliedWorkplace.value],
+      jobType: typeMap[appliedJobType.value],
+      sort: sort.value === 'Salary high to low' ? 'salary_desc' : sort.value === 'Salary low to high' ? 'salary_asc' : 'newest',
+      signal: controller.signal,
+    })
+    if (requestId !== requestNumber) return
+    jobs.value = result.jobs
+    totalJobs.value = result.total
+    resultStatus.value = `${result.total} ${result.total === 1 ? 'job' : 'jobs'} found.`
+  } catch (cause) {
+    if (controller.signal.aborted || requestId !== requestNumber) return
+    loadError.value = cause instanceof ApiRequestError
+      ? cause.message
+      : 'We could not load jobs right now. Check your connection and try again.'
+    jobs.value = []
+    totalJobs.value = 0
+  } finally {
+    if (requestId === requestNumber) loading.value = false
+  }
+}
+
+onBeforeUnmount(() => {
+  requestNumber += 1
+  activeController?.abort()
+})
+
 function applyFilters() {
+  currentPage.value = 1
   appliedSearch.value = search.value.trim()
   appliedWorkplace.value = workplace.value
   appliedJobType.value = jobType.value
-  resultStatus.value = `${resultCountLabel.value} shown.`
+  const query = {
+    q: appliedSearch.value || undefined,
+    workplace: appliedWorkplace.value === 'All' ? undefined : appliedWorkplace.value,
+    type: appliedJobType.value === 'All' ? undefined : appliedJobType.value,
+    sort: sort.value === 'Newest' ? undefined : sort.value,
+  }
+  const unchanged = Object.entries(query).every(([key, value]) => String(route.query[key] ?? '') === String(value ?? ''))
+    && Object.keys(route.query).every((key) => key in query)
   void router.replace({
-    query: {
-      q: appliedSearch.value || undefined,
-      workplace: appliedWorkplace.value === 'All' ? undefined : appliedWorkplace.value,
-      type: appliedJobType.value === 'All' ? undefined : appliedJobType.value,
-    },
+    query,
   })
+  if (unchanged) void loadJobs()
 }
 
 function applyCategory(category: string) {
@@ -88,6 +140,12 @@ function clearFilters() {
   sort.value = 'Newest'
   applyFilters()
 }
+
+function changePage(page: number) {
+  if (page < 1 || page > pageCount.value || page === currentPage.value) return
+  currentPage.value = page
+  void loadJobs()
+}
 </script>
 
 <template>
@@ -98,7 +156,7 @@ function clearFilters() {
         <div>
           <h1 class="max-w-2xl text-4xl font-semibold tracking-[-0.04em] text-[#0b2b82] sm:text-5xl"><template v-if="activeCategory">{{ activeCategory }} roles worth a <span class="text-[#7b66ff]">closer look.</span></template><template v-else>Find work that feels like a <span class="text-[#7b66ff]">good next move.</span></template></h1>
         </div>
-        <p class="rounded-full border border-[#d8d1ff] bg-white px-4 py-2 text-sm font-medium text-[#53669a]">{{ activeCategory ? resultCountLabel : `${jobs.length} roles available` }}</p>
+        <p class="rounded-full border border-[#d8d1ff] bg-white px-4 py-2 text-sm font-medium text-[#53669a]">{{ activeCategory ? resultCountLabel : `${totalJobs} roles available` }}</p>
       </div>
     </div>
   </section>
@@ -119,19 +177,21 @@ function clearFilters() {
         <label class="flex items-center gap-3 rounded-xl bg-[#f8f7fc] px-4 py-3.5">
           <span class="sr-only">Job type</span>
           <svg class="size-5 shrink-0 text-[#7c70ba]" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M7 3v3m10-3v3M4 9h16M5 5h14a1 1 0 011 1v13a1 1 0 01-1 1H5a1 1 0 01-1-1V6a1 1 0 011-1z" /></svg>
-          <select v-model="jobType" class="w-full appearance-none bg-transparent text-sm text-[#53669a] outline-none"><option>All</option><option>Full-time</option><option>Part-time</option><option>Contract</option></select>
+          <select v-model="jobType" class="w-full appearance-none bg-transparent text-sm text-[#53669a] outline-none"><option>All</option><option>Full-time</option><option>Part-time</option><option>Contract</option><option>Internship</option><option>Temporary</option><option>Freelance</option></select>
         </label>
         <button type="submit" class="cursor-pointer rounded-xl bg-[#7b66ff] px-7 py-3.5 text-sm font-semibold text-white shadow-[0_10px_24px_rgba(123,102,255,0.27)] transition hover:-translate-y-0.5 hover:bg-[#6f5cf9] active:translate-y-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#7b66ff] focus-visible:ring-offset-2">Search roles</button>
       </div>
       <p class="sr-only" aria-live="polite">{{ resultStatus }}</p>
+      <p v-if="filtersDirty" class="mt-3 px-2 text-sm text-[#6b58d4]">Filters changed. Search roles to update the results.</p>
     </form>
 
     <div class="mt-10 grid gap-10 lg:grid-cols-[250px_minmax(0,1fr)]">
       <aside class="h-fit rounded-2xl border border-[#e7e4f4] bg-[#fcfbff] p-5 lg:top-6">
         <div class="flex items-center justify-between">
           <h2 class="font-semibold text-[#0b2b82]">Filter</h2>
+          <button type="button" class="cursor-pointer text-xs font-medium text-[#6b58d4] hover:underline" @click="clearFilters">Clear all</button>
         </div>
-        <div class="mt-6 border-t border-[#ece8f7] pt-5">
+          <div class="mt-6 border-t border-[#ece8f7] pt-5">
           <p class="text-sm font-semibold text-[#263571]">Workplace</p>
           <div class="mt-3 space-y-2.5">
             <label v-for="option in ['All', 'Remote', 'Hybrid', 'On-site']" :key="option" class="flex cursor-pointer items-center justify-between text-sm text-[#5c6894]"><span>{{ option }}</span><input v-model="workplace" :value="option" type="radio" class="size-4 accent-[#7b66ff] cursor-pointer" /></label>
@@ -139,19 +199,25 @@ function clearFilters() {
         </div>
         <div class="mt-6 border-t border-[#ece8f7] pt-5">
           <p class="text-sm font-semibold text-[#263571]">Job type</p>
-          <div class="mt-3 space-y-2.5">
-            <label v-for="option in ['All', 'Full-time', 'Part-time', 'Contract']" :key="option" class="flex cursor-pointer items-center justify-between text-sm text-[#5c6894]"><span>{{ option }}</span><input v-model="jobType" :value="option" type="radio" class="size-4 accent-[#7b66ff] cursor-pointer" /></label>
+            <div class="mt-3 space-y-2.5">
+              <label v-for="option in jobTypeOptions" :key="option" class="flex cursor-pointer items-center justify-between text-sm text-[#5c6894]"><span>{{ option }}</span><input v-model="jobType" :value="option" type="radio" class="size-4 accent-[#7b66ff] cursor-pointer" /></label>
           </div>
         </div>
           <div class="mt-6 border-t border-[#ece8f7] pt-5"><p class="text-sm font-semibold text-[#263571]">Popular categories</p><div class="mt-3 flex flex-wrap gap-2"><button v-for="category in categoryOptions" :key="category" type="button" :aria-pressed="activeCategory === category" class="cursor-pointer rounded-full bg-white px-3 py-1.5 text-xs text-[#62709a] ring-1 ring-[#e7e4f4] transition hover:-translate-y-0.5 hover:text-[#5f4bd2] hover:ring-[#bcb1f5] active:translate-y-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#7b66ff] focus-visible:ring-offset-2" :class="{ 'bg-[#f0edff] text-[#5f4bd2] ring-[#bcb1f5]': activeCategory === category }" @click="applyCategory(category)">{{ category }}</button></div></div>
       </aside>
 
       <div>
+        <div v-if="activeCategory" class="mb-5 flex items-center justify-between gap-4 rounded-lg bg-[#f3f0ff] px-4 py-3 text-sm text-[#5845ba]"><span>Showing {{ activeCategory }} roles</span><button type="button" class="cursor-pointer font-semibold hover:underline" @click="clearCategory">Clear category</button></div>
         <div class="flex flex-col gap-3 border-b border-[#e9e6f2] pb-5 sm:flex-row sm:items-center sm:justify-between">
-          <p class="text-sm text-[#5d6b97]"><span class="font-semibold text-[#0b2b82]">{{ filteredJobs.length }} jobs</span> matching your search</p>
-          <label class="flex items-center gap-3 text-sm text-[#61709b]">Sort by <select v-model="sort" class="rounded-lg border border-[#e3dff1] bg-white px-3 py-2 text-sm font-medium text-[#36457e] outline-none"><option>Newest</option><option>Salary</option></select></label>
+          <p class="text-sm text-[#5d6b97]"><span class="font-semibold text-[#0b2b82]">{{ totalJobs }} jobs</span> matching your search</p>
+          <label class="flex items-center gap-3 text-sm text-[#61709b]">Sort by <select v-model="sort" class="rounded-lg border border-[#e3dff1] bg-white px-3 py-2 text-sm font-medium text-[#36457e] outline-none" @change="applyFilters"><option>Newest</option><option>Salary high to low</option><option>Salary low to high</option></select></label>
         </div>
-        <div v-if="filteredJobs.length" class="mt-6 grid gap-5 xl:grid-cols-2"><JobCard v-for="job in filteredJobs" :key="job.id" :job="job" /></div>
+        <div v-if="loading" class="mt-6 rounded-2xl border border-[#e7e4f4] bg-[#fcfbff] px-6 py-16 text-center text-sm text-[#62709a]" role="status">Loading current job listings…</div>
+        <div v-else-if="loadError" class="mt-6 rounded-2xl border border-[#f1d6d6] bg-[#fff8f8] px-6 py-12 text-center" role="alert"><p class="font-semibold text-[#813a3a]">Jobs are temporarily unavailable</p><p class="mt-2 text-sm text-[#795e5e]">{{ loadError }}</p><button type="button" class="mt-5 rounded-lg bg-[#7b66ff] px-4 py-2.5 text-sm font-semibold text-white" @click="loadJobs">Try again</button></div>
+        <template v-else-if="jobs.length">
+          <div class="mt-6 grid gap-5 xl:grid-cols-2"><JobCard v-for="job in jobs" :key="job.id" :job="job" /></div>
+          <nav v-if="pageCount > 1" class="mt-8 flex items-center justify-center gap-4" aria-label="Job result pages"><button type="button" class="rounded-lg border border-[#e3dff1] px-4 py-2 text-sm font-medium text-[#36457e] disabled:cursor-not-allowed disabled:opacity-50" :disabled="currentPage <= 1 || loading" @click="changePage(currentPage - 1)">Previous</button><span class="text-sm text-[#62709a]" aria-live="polite">Page {{ currentPage }} of {{ pageCount }}</span><button type="button" class="rounded-lg border border-[#e3dff1] px-4 py-2 text-sm font-medium text-[#36457e] disabled:cursor-not-allowed disabled:opacity-50" :disabled="currentPage >= pageCount || loading" @click="changePage(currentPage + 1)">Next</button></nav>
+        </template>
         <div v-else class="mt-6 rounded-2xl border border-dashed border-[#d9d2f4] bg-[#faf9ff] px-6 py-16 text-center"><p class="text-lg font-semibold text-[#0b2b82]">No roles found</p><p class="mt-2 text-sm text-[#63719d]">Try adjusting your search or clearing your filters.</p><button type="button" class="mt-5 cursor-pointer text-sm font-semibold text-[#7b66ff] underline-offset-4 transition hover:text-[#503dc0] hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#7b66ff] focus-visible:ring-offset-2" @click="clearFilters">Reset filters</button></div>
       </div>
     </div>

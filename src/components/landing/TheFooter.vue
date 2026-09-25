@@ -46,8 +46,8 @@ const socials = [facebook, linkedin, twitter]
       <!-- Newsletter -->
       <div v-if="currentUser" class="flex flex-col gap-5">
         <h3 class="text-2xl font-semibold text-[#f1efff]">{{ isJobSeeker ? 'Your next chapter' : 'Your workspace' }}</h3>
-        <p class="max-w-[358px] text-base leading-7 text-[#e3ebff]">{{ isJobSeeker ? 'Keep your profile, shortlist, and application drafts in one place.' : 'Manage your work from your dedicated dashboard.' }}</p>
-        <template v-if="isJobSeeker"><router-link to="/profile" class="text-[#e3ebff] hover:underline">View profile →</router-link><router-link to="/saved-jobs" class="text-[#e3ebff] hover:underline">Saved jobs →</router-link><router-link to="/applications" class="text-[#e3ebff] hover:underline">Application drafts →</router-link></template>
+        <p class="max-w-[358px] text-base leading-7 text-[#e3ebff]">{{ isJobSeeker ? 'Keep your profile, shortlist, and applications in one place.' : 'Manage your work from your dedicated dashboard.' }}</p>
+        <template v-if="isJobSeeker"><router-link to="/profile" class="text-[#e3ebff] hover:underline">View profile →</router-link><router-link to="/saved-jobs" class="text-[#e3ebff] hover:underline">Saved jobs →</router-link><router-link to="/applications" class="text-[#e3ebff] hover:underline">Applications →</router-link></template>
         <router-link v-else :to="dashboardPathForRole(currentUser.role)" class="text-[#e3ebff] hover:underline">Go to dashboard →</router-link>
       </div>
       <div v-else class="flex flex-col gap-6">

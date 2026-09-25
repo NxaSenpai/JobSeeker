@@ -19,7 +19,7 @@ export async function apiRequest<T>(path: string, options: RequestInit = {}): Pr
 
   const headers = new Headers(options.headers)
   if (!(options.body instanceof FormData)) headers.set('Content-Type', 'application/json')
-  if (session && (path.startsWith('/account/') || path === '/auth/me')) {
+  if (session) {
     headers.set('Authorization', `Bearer ${session.accessToken}`)
   }
   const response = await fetch(`${apiBaseUrl}${path}`, {
@@ -53,7 +53,7 @@ export async function apiRequest<T>(path: string, options: RequestInit = {}): Pr
 export async function apiBlob(path: string): Promise<Blob> {
   const session = getAuthSession()
   const headers = new Headers()
-  if (session && path.startsWith('/account/')) {
+  if (session) {
     headers.set('Authorization', `Bearer ${session.accessToken}`)
   }
 

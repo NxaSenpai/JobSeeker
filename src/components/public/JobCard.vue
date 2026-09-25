@@ -10,7 +10,8 @@ defineProps<{ job: Job; compact?: boolean }>()
     <div class="flex items-start justify-between gap-4">
       <div class="flex min-w-0 items-center gap-3">
         <div class="flex size-12 shrink-0 items-center justify-center rounded-xl bg-[#f7f5ff]">
-          <img :src="job.logo" :alt="`${job.company} logo`" class="size-8 object-contain" />
+          <img v-if="job.logo" :src="job.logo" :alt="`${job.company} logo`" class="size-8 object-contain" loading="lazy" referrerpolicy="no-referrer" />
+          <span v-else class="text-sm font-semibold text-[#6d58dd]" aria-hidden="true">{{ job.company.slice(0, 1).toUpperCase() }}</span>
         </div>
         <div class="min-w-0">
           <p class="truncate text-sm font-medium text-[#4b5793]">{{ job.company }}</p>

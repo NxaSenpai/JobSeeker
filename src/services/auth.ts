@@ -89,7 +89,9 @@ export function clearAuthSession() {
 export function updateAuthUser(user: AuthUser) {
   const session = getAuthSession()
   if (session && session.user.id === user.id) {
-    saveAuthSession({ ...session, user }, window.localStorage.getItem(authStorageKey) !== null)
+    // Profile endpoints may omit fields that are unrelated to the edit. Merge
+    // the response so the persistent header never regresses to stale/blank data.
+    saveAuthSession({ ...session, user: { ...session.user, ...user } }, window.localStorage.getItem(authStorageKey) !== null)
   }
 }
 
