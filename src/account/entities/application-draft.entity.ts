@@ -26,6 +26,11 @@ export class ApplicationDraft {
   @Column({ type: 'varchar', length: 2048, default: '' })
   resumeUrl: string;
 
+  @Column({ type: 'uuid', nullable: true }) resumeId: string | null;
+  @Column({ type: 'text', default: '' }) description: string;
+  @Column({ type: 'varchar', length: 40, default: '' }) phone: string;
+  @Column({ type: 'varchar', length: 2048, default: '' }) portfolioUrl: string;
+
   @UpdateDateColumn()
   updatedAt: Date;
 }

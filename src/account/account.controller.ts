@@ -9,16 +9,18 @@ import {
   Put,
   Req,
   UseGuards,
+  NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { SessionGuard } from '../auth/session.guard';
 import type { SessionRequest } from '../auth/session.guard';
-import { publicUser } from '../auth/public-user';
 import { User, UserRole } from '../users/entities/user.entity';
 import { SavedJob } from './entities/saved-job.entity';
 import { ApplicationDraft } from './entities/application-draft.entity';
 import { JobIdDto, SaveDraftDto, UpdateProfileDto } from './account.dto';
+import { ProfileService } from './profile.service';
+import { Resume } from './entities/resume.entity';
 
 @Controller('api/v1/account')
 @UseGuards(SessionGuard)
@@ -28,6 +30,7 @@ export class AccountController {
     @InjectRepository(SavedJob) private readonly saved: Repository<SavedJob>,
     @InjectRepository(ApplicationDraft)
     private readonly drafts: Repository<ApplicationDraft>,
+    private readonly profiles: ProfileService,
   ) {}
 
   private jobSeeker(request: SessionRequest) {
@@ -36,20 +39,16 @@ export class AccountController {
     return request.user.id;
   }
 
+  @Get('profile')
+  profile(@Req() request: SessionRequest) {
+    this.jobSeeker(request);
+    return this.profiles.getProfile(request.user);
+  }
+
   @Patch('profile')
-  async updateProfile(
-    @Req() request: SessionRequest,
-    @Body() dto: UpdateProfileDto,
-  ) {
-    const id = this.jobSeeker(request);
-    await this.users.update(id, {
-      firstName: dto.firstName,
-      lastName: dto.lastName,
-      headline: dto.headline.trim(),
-      location: dto.location.trim(),
-      bio: dto.bio.trim(),
-    });
-    return { user: publicUser(await this.users.findOneByOrFail({ id })) };
+  updateProfile(@Req() request: SessionRequest, @Body() dto: UpdateProfileDto) {
+    this.jobSeeker(request);
+    return this.profiles.updateProfile(request.user, dto);
   }
 
   @Get('saved-jobs')
@@ -97,12 +96,25 @@ export class AccountController {
     @Body() dto: SaveDraftDto,
   ) {
     const userId = this.jobSeeker(request);
+    if (dto.resumeId) {
+      const profile = await this.profiles.getForUser(request.user);
+      const resume = await this.drafts.manager.findOneBy(Resume, {
+        id: dto.resumeId,
+        profileId: profile.id,
+      });
+      if (!resume)
+        throw new NotFoundException('Choose a résumé from your own profile.');
+    }
     await this.drafts.upsert(
       {
         userId,
         jobId: params.jobId,
         coverLetter: dto.coverLetter,
         resumeUrl: dto.resumeUrl,
+        resumeId: dto.resumeId ?? null,
+        description: dto.description ?? '',
+        phone: dto.phone ?? '',
+        portfolioUrl: dto.portfolioUrl ?? '',
       },
       ['userId', 'jobId'],
     );

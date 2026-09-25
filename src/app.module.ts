@@ -4,6 +4,8 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 
 import { AuthModule } from './auth/auth.module';
 import { AccountModule } from './account/account.module';
+import { CompanyModule } from './companies/company.module';
+import { ReportsModule } from './reports/reports.module';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 
@@ -20,10 +22,14 @@ const databaseModules = process.env.DATABASE_URL
         type: 'postgres' as const,
         url: process.env.DATABASE_URL,
         autoLoadEntities: true,
-        synchronize: process.env.NODE_ENV !== 'production',
+        synchronize:
+          process.env.NODE_ENV !== 'production' &&
+          process.env.DB_SYNCHRONIZE !== 'false',
       }),
       AuthModule,
       AccountModule,
+      CompanyModule,
+      ReportsModule,
     ]
   : [];
 

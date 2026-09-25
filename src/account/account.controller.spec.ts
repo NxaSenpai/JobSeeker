@@ -11,6 +11,8 @@ import { SessionGuard } from '../auth/session.guard';
 import { User, UserRole } from '../users/entities/user.entity';
 import { SavedJob } from './entities/saved-job.entity';
 import { ApplicationDraft } from './entities/application-draft.entity';
+import { UserProfile } from './entities/user-profile.entity';
+import { ProfileService } from './profile.service';
 
 describe('Authenticated account HTTP endpoints', () => {
   let app: INestApplication<Server>;
@@ -18,6 +20,7 @@ describe('Authenticated account HTTP endpoints', () => {
   const firstId = '11111111-1111-4111-8111-111111111111';
   const secondId = '22222222-2222-4222-8222-222222222222';
   let users: Map<string, Record<string, unknown>>;
+  let profiles: Map<string, Record<string, unknown>>;
   let saved: ReturnType<typeof activityRepository>;
   let drafts: ReturnType<typeof activityRepository>;
 
@@ -49,6 +52,7 @@ describe('Authenticated account HTTP endpoints', () => {
     headline: 'Designer',
     location: 'Phnom Penh',
     bio: 'My profile',
+    skills: [' Vue.js ', 'Vue.js', 'English'],
   };
   const draft = {
     coverLetter: 'Hello team',
@@ -70,6 +74,30 @@ describe('Authenticated account HTTP endpoints', () => {
         },
       ]),
     );
+    profiles = new Map(
+      [...users.values()].map((user) => [
+        String(user.id),
+        {
+          id: user.id,
+          userId: user.id,
+          firstName: user.firstName,
+          lastName: user.lastName,
+          headline: null,
+          location: null,
+          bio: null,
+          phone: null,
+          profileImageUrl: null,
+          dateOfBirth: null,
+          websiteUrl: null,
+          linkedinUrl: null,
+          githubUrl: null,
+          isOpenToWork: false,
+          skills: [],
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        },
+      ]),
+    );
     saved = activityRepository();
     drafts = activityRepository();
     const module = await Test.createTestingModule({
@@ -82,6 +110,7 @@ describe('Authenticated account HTTP endpoints', () => {
       controllers: [AuthController, AccountController],
       providers: [
         SessionGuard,
+        ProfileService,
         { provide: AuthService, useValue: {} },
         {
           provide: getRepositoryToken(User),
@@ -91,6 +120,42 @@ describe('Authenticated account HTTP endpoints', () => {
             findOneByOrFail: ({ id }: { id: string }) => users.get(id),
             update: (id: string, data: Record<string, unknown>) =>
               users.set(id, { ...users.get(id), ...data }),
+          },
+        },
+        {
+          provide: getRepositoryToken(UserProfile),
+          useValue: {
+            manager: {
+              transaction: (work: (manager: unknown) => unknown) =>
+                work({
+                  getRepository: (entity: unknown) =>
+                    entity === UserProfile
+                      ? {
+                          findOneOrFail: ({
+                            where,
+                          }: {
+                            where: { userId: string };
+                          }) => profiles.get(where.userId),
+                          save: (data: Record<string, unknown>) => {
+                            profiles.set(String(data.userId), data);
+                            return data;
+                          },
+                        }
+                      : {
+                          update: (id: string, data: Record<string, unknown>) =>
+                            users.set(id, { ...users.get(id), ...data }),
+                          findOneByOrFail: ({ id }: { id: string }) =>
+                            users.get(id),
+                        },
+                }),
+            },
+            findOne: ({ where }: { where: { userId: string } }) =>
+              profiles.get(where.userId),
+            create: (data: Record<string, unknown>) => data,
+            save: (data: Record<string, unknown>) => {
+              profiles.set(String(data.userId), data);
+              return data;
+            },
           },
         },
         { provide: getRepositoryToken(SavedJob), useValue: saved },
@@ -163,6 +228,9 @@ describe('Authenticated account HTTP endpoints', () => {
     expect(
       (response.body as { user: Record<string, unknown> }).user.passwordHash,
     ).toBeUndefined();
+    expect(
+      (response.body as { profile: { skills: string[] } }).profile.skills,
+    ).toEqual(['Vue.js', 'English']);
     expect(users.get(secondId)!.firstName).toBe('Test');
     const me = await request(app.getHttpServer())
       .get('/api/v1/auth/me')

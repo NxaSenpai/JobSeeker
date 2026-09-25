@@ -1,6 +1,7 @@
 import {
   CanActivate,
   ExecutionContext,
+  ForbiddenException,
   Injectable,
   UnauthorizedException,
 } from '@nestjs/common';
@@ -24,21 +25,32 @@ export class SessionGuard implements CanActivate {
     const match = /^Bearer (\S+)$/i.exec(request.headers.authorization ?? '');
     if (!match) throw new UnauthorizedException('Please sign in to continue.');
 
+    request.user = await this.authenticateToken(match[1]);
+    return true;
+  }
+
+  async authenticateToken(token: string): Promise<User> {
     let subject: string;
+    let payloadSessionVersion = 0;
     try {
       const payload = await this.jwt.verifyAsync<{
         sub?: string;
         exp?: number;
-      }>(match[1], { algorithms: ['HS256'] });
+        sessionVersion?: number;
+      }>(token, { algorithms: ['HS256'] });
       if (
         !payload.sub ||
         !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
           payload.sub,
         ) ||
-        typeof payload.exp !== 'number'
+        typeof payload.exp !== 'number' ||
+        (payload.sessionVersion !== undefined &&
+          (!Number.isSafeInteger(payload.sessionVersion) ||
+            payload.sessionVersion < 0))
       )
         throw new Error('Invalid session');
       subject = payload.sub;
+      payloadSessionVersion = payload.sessionVersion ?? 0;
     } catch {
       throw new UnauthorizedException(
         'Your session has expired. Please sign in again.',
@@ -49,8 +61,16 @@ export class SessionGuard implements CanActivate {
       throw new UnauthorizedException(
         'Please sign in with a verified account.',
       );
-    // Always authorize using the current database role, never a client-supplied role.
-    request.user = user;
-    return true;
+    if (user.suspendedAt)
+      throw new ForbiddenException({
+        message: 'This account is suspended.',
+        reason: user.suspensionReason,
+      });
+    if ((user.sessionVersion ?? 0) !== (payloadSessionVersion ?? 0)) {
+      throw new UnauthorizedException(
+        'Your session is no longer valid. Please sign in again.',
+      );
+    }
+    return user;
   }
 }

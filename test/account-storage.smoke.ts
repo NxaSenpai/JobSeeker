@@ -6,7 +6,10 @@ import { AccountController } from '../src/account/account.controller';
 import { User, UserRole } from '../src/users/entities/user.entity';
 import { SavedJob } from '../src/account/entities/saved-job.entity';
 import { ApplicationDraft } from '../src/account/entities/application-draft.entity';
+import { UserProfile } from '../src/account/entities/user-profile.entity';
 import type { SessionRequest } from '../src/auth/session.guard';
+import { publicUser } from '../src/auth/public-user';
+import { ProfileService } from '../src/account/profile.service';
 
 // Uses the configured schema, never synchronizes it, and rolls back every fixture.
 // Does not call registration, email providers, or employer submission.
@@ -20,7 +23,7 @@ async function main() {
   const database = new DataSource({
     type: 'postgres',
     url: process.env.DATABASE_URL,
-    entities: [User, SavedJob, ApplicationDraft],
+    entities: [User, UserProfile, SavedJob, ApplicationDraft],
     synchronize: false,
     logging: false,
   });
@@ -45,7 +48,20 @@ async function main() {
         termsAccepted: true,
       }),
     );
-    const controller = new AccountController(users, saved, drafts);
+    const profileService = {
+      updateProfile: async (user: User, dto: Record<string, string>) => {
+        await users.update(user.id, dto);
+        return {
+          user: publicUser(await users.findOneByOrFail({ id: user.id })),
+        };
+      },
+    } as unknown as ProfileService;
+    const controller = new AccountController(
+      users,
+      saved,
+      drafts,
+      profileService,
+    );
     const own = { user } as SessionRequest;
     const other = { user: { ...user, id: randomUUID() } } as SessionRequest;
     const params = { jobId: 'product-designer' };
