@@ -12,6 +12,7 @@ import {
   JobModerationStatus,
   JobStatus,
 } from '../account/entities/job.entity';
+import { Application } from '../account/entities/application.entity';
 import { presentJob } from '../account/job-presenter';
 import { User } from '../users/entities/user.entity';
 import { CompanyService } from './company.service';
@@ -60,6 +61,8 @@ export class CompanyJobsService {
     private readonly database: DataSource,
     private readonly companiesService: CompanyService,
     @InjectRepository(Job) private readonly jobs: Repository<Job>,
+    @InjectRepository(Application)
+    private readonly applications: Repository<Application>,
   ) {}
 
   async list(user: User, query: CompanyJobsQueryDto) {
@@ -82,8 +85,28 @@ export class CompanyJobsService {
       .skip((query.page - 1) * query.limit)
       .take(query.limit)
       .getManyAndCount();
+    const applicationCounts = jobs.length
+      ? await this.applications
+          .createQueryBuilder('application')
+          .select('application.jobId', 'jobId')
+          .addSelect('COUNT(*)::int', 'applicantCount')
+          .where('application.jobId IN (:...jobIds)', {
+            jobIds: jobs.map((job) => job.id),
+          })
+          .groupBy('application.jobId')
+          .getRawMany<{ jobId: string; applicantCount: number }>()
+      : [];
+    const applicantCountByJobId = new Map(
+      applicationCounts.map(({ jobId, applicantCount }) => [
+        jobId,
+        Number(applicantCount),
+      ]),
+    );
     return {
-      jobs: jobs.map(presentJob),
+      jobs: jobs.map((job) => ({
+        ...presentJob(job),
+        applicantCount: applicantCountByJobId.get(job.id) ?? 0,
+      })),
       total,
       page: query.page,
       limit: query.limit,

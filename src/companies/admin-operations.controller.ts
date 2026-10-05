@@ -19,11 +19,32 @@ import {
   AdminUsersQueryDto,
 } from './admin.dto';
 import { AdminOperationsService } from './admin-operations.service';
+import { NotificationRealtimeService } from '../notifications/notification-realtime.service';
 
 @Controller('api/v1/admin')
 @UseGuards(SessionGuard, AdminRoleGuard)
 export class AdminOperationsController {
-  constructor(private readonly admin: AdminOperationsService) {}
+  constructor(
+    private readonly admin: AdminOperationsService,
+    private readonly notifications: NotificationRealtimeService,
+  ) {}
+
+  @Get('profile')
+  profile(@Req() request: SessionRequest) {
+    const user = request.user;
+    return {
+      profile: {
+        id: user.id,
+        email: user.email,
+        role: user.role,
+        emailVerified: user.emailVerified,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        createdAt: user.createdAt,
+        updatedAt: user.updatedAt,
+      },
+    };
+  }
 
   @Get('users')
   listUsers(@Query() query: AdminUsersQueryDto) {
@@ -62,7 +83,7 @@ export class AdminOperationsController {
     @Param('id', ParseUUIDPipe) id: string,
     @Req() request: SessionRequest,
   ) {
-    return this.admin.approveCompany(id, request.user.id);
+    return this.withQueueUpdate(this.admin.approveCompany(id, request.user.id));
   }
 
   @Patch('companies/:id/reject')
@@ -71,7 +92,9 @@ export class AdminOperationsController {
     @Req() request: SessionRequest,
     @Body() dto: AdminReasonDto,
   ) {
-    return this.admin.rejectCompany(id, request.user.id, dto);
+    return this.withQueueUpdate(
+      this.admin.rejectCompany(id, request.user.id, dto),
+    );
   }
 
   @Patch('companies/:id/suspend')
@@ -80,7 +103,9 @@ export class AdminOperationsController {
     @Req() request: SessionRequest,
     @Body() dto: AdminReasonDto,
   ) {
-    return this.admin.suspendCompany(id, request.user.id, dto);
+    return this.withQueueUpdate(
+      this.admin.suspendCompany(id, request.user.id, dto),
+    );
   }
 
   @Patch('companies/:id/unsuspend')
@@ -88,7 +113,9 @@ export class AdminOperationsController {
     @Param('id', ParseUUIDPipe) id: string,
     @Req() request: SessionRequest,
   ) {
-    return this.admin.unsuspendCompany(id, request.user.id);
+    return this.withQueueUpdate(
+      this.admin.unsuspendCompany(id, request.user.id),
+    );
   }
 
   @Get('jobs')
@@ -98,7 +125,7 @@ export class AdminOperationsController {
 
   @Patch('jobs/:id/approve')
   approveJob(@Param('id') id: string, @Req() request: SessionRequest) {
-    return this.admin.approveJob(id, request.user.id);
+    return this.withQueueUpdate(this.admin.approveJob(id, request.user.id));
   }
 
   @Patch('jobs/:id/reject')
@@ -107,7 +134,7 @@ export class AdminOperationsController {
     @Req() request: SessionRequest,
     @Body() dto: AdminReasonDto,
   ) {
-    return this.admin.rejectJob(id, request.user.id, dto);
+    return this.withQueueUpdate(this.admin.rejectJob(id, request.user.id, dto));
   }
 
   @Patch('jobs/:id/hide')
@@ -119,8 +146,19 @@ export class AdminOperationsController {
     return this.admin.hideJob(id, request.user.id, dto);
   }
 
+  @Patch('jobs/:id/restore')
+  restoreJob(@Param('id') id: string, @Req() request: SessionRequest) {
+    return this.admin.restoreJob(id, request.user.id);
+  }
+
   @Get('audit-logs')
   listAuditLogs(@Query() query: AdminListQueryDto) {
     return this.admin.listAuditLogs(query);
+  }
+
+  private async withQueueUpdate<T>(operation: Promise<T>): Promise<T> {
+    const result = await operation;
+    this.notifications.publishAdminQueueUpdated();
+    return result;
   }
 }

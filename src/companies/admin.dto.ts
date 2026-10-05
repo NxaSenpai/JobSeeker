@@ -2,6 +2,7 @@ import { Transform, Type } from 'class-transformer';
 import {
   IsBoolean,
   IsEnum,
+  IsIn,
   IsInt,
   IsOptional,
   IsString,
@@ -67,13 +68,13 @@ export class AdminCompaniesQueryDto extends AdminListQueryDto {
 }
 
 export class AdminJobsQueryDto extends AdminListQueryDto {
-  @IsEnum(JobModerationStatus)
+  @IsIn([...Object.values(JobModerationStatus), 'ALL'])
   @IsOptional()
-  moderationStatus?: JobModerationStatus;
+  moderationStatus?: JobModerationStatus | 'ALL';
 
-  @IsEnum(JobStatus)
+  @IsIn([...Object.values(JobStatus), 'ALL'])
   @IsOptional()
-  status?: JobStatus;
+  status?: JobStatus | 'ALL';
 }
 
 export class AdminReasonDto {

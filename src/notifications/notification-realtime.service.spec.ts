@@ -1,85 +1,36 @@
-import { Notification } from '../account/entities/notification.entity';
+import { UserRole } from '../users/entities/user.entity';
 import type { NotificationSocket } from './notification-socket.type';
 import {
-  NOTIFICATION_CREATED_EVENT,
+  ADMIN_QUEUES_UPDATED_EVENT,
   NotificationRealtimeService,
 } from './notification-realtime.service';
 
-describe('NotificationRealtimeService', () => {
-  const userA = '11111111-1111-4111-8111-111111111111';
-  const userB = '22222222-2222-4222-8222-222222222222';
-
-  function socket() {
-    const emit = jest.fn();
-    const client = {
+describe('NotificationRealtimeService admin queue events', () => {
+  it('publishes queue invalidations only to sockets authenticated as admins', () => {
+    const service = new NotificationRealtimeService();
+    const adminEmit = jest.fn(() => undefined);
+    const candidateEmit = jest.fn(() => undefined);
+    const adminSocket = {
       connected: true,
       data: {},
-      emit,
+      emit: adminEmit,
     } as unknown as NotificationSocket;
-    return { client, emit };
-  }
+    const candidateSocket = {
+      connected: true,
+      data: {},
+      emit: candidateEmit,
+    } as unknown as NotificationSocket;
 
-  it('sends a minimized event only to sockets authenticated as the recipient', () => {
-    const service = new NotificationRealtimeService();
-    const recipientSocket = socket();
-    const otherUserSocket = socket();
-    service.connect(userA, recipientSocket.client);
-    service.connect(userB, otherUserSocket.client);
-    const createdAt = new Date('2026-09-24T10:00:00.000Z');
+    service.connect('admin-user-id', UserRole.ADMIN, adminSocket);
+    service.connect('candidate-user-id', UserRole.USER, candidateSocket);
+    service.publishAdminQueueUpdated();
 
-    service.publish({
-      id: 'notification-1',
-      userId: userA,
-      title: 'Application status updated',
-      message: 'Your application is under review.',
-      link: '/applications/application-1',
-      readAt: null,
-      createdAt,
-    } as Notification);
-
-    expect(recipientSocket.emit).toHaveBeenCalledWith(
-      NOTIFICATION_CREATED_EVENT,
-      {
-        id: 'notification-1',
-        title: 'Application status updated',
-        message: 'Your application is under review.',
-        link: '/applications/application-1',
-        readAt: null,
-        createdAt: '2026-09-24T10:00:00.000Z',
-      },
-    );
-    expect(otherUserSocket.emit).not.toHaveBeenCalled();
-  });
-
-  it('stops delivering to a socket after disconnect', () => {
-    const service = new NotificationRealtimeService();
-    const recipientSocket = socket();
-    service.connect(userA, recipientSocket.client);
-    service.disconnect(recipientSocket.client);
-
-    service.publish({ userId: userA } as Notification);
-
-    expect(recipientSocket.emit).not.toHaveBeenCalled();
-  });
-
-  it('keeps persisted notification workflows successful when a socket send fails', () => {
-    const service = new NotificationRealtimeService();
-    const brokenSocket = socket();
-    brokenSocket.client.emit = jest.fn(() => {
-      throw new Error('Socket transport closed unexpectedly');
-    });
-    service.connect(userA, brokenSocket.client);
-
-    expect(() =>
-      service.publish({
-        id: 'notification-2',
-        userId: userA,
-        title: 'Application update',
-        message: 'Your application changed.',
-        link: '/applications/application-2',
-        readAt: null,
-        createdAt: new Date('2026-09-24T10:00:00.000Z'),
-      } as Notification),
-    ).not.toThrow();
+    expect(adminEmit).toHaveBeenCalledTimes(1);
+    const [eventName, payload] = adminEmit.mock.calls[0] ?? [];
+    expect(eventName).toBe(ADMIN_QUEUES_UPDATED_EVENT);
+    expect(
+      typeof (payload as { updatedAt?: unknown } | undefined)?.updatedAt,
+    ).toBe('string');
+    expect(candidateEmit).not.toHaveBeenCalled();
   });
 });

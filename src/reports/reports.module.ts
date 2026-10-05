@@ -11,10 +11,12 @@ import { AdminReportService } from './admin-report.service';
 import { AbuseReport } from './entities/abuse-report.entity';
 import { UserReportsController } from './reports.controller';
 import { ReportService } from './report.service';
+import { NotificationsModule } from '../notifications/notifications.module';
 
 @Module({
   imports: [
     AuthModule,
+    NotificationsModule,
     TypeOrmModule.forFeature([AbuseReport, User, Company, Job, AuditLog]),
   ],
   controllers: [UserReportsController, AdminReportsController],

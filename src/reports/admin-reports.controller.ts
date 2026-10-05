@@ -14,11 +14,15 @@ import { SessionGuard, type SessionRequest } from '../auth/session.guard';
 import { AdminRoleGuard } from '../companies/admin-role.guard';
 import { AdminReportsQueryDto, ReportResolutionDto } from './report.dto';
 import { AdminReportService } from './admin-report.service';
+import { NotificationRealtimeService } from '../notifications/notification-realtime.service';
 
 @Controller('api/v1/admin/reports')
 @UseGuards(SessionGuard, AdminRoleGuard)
 export class AdminReportsController {
-  constructor(private readonly reports: AdminReportService) {}
+  constructor(
+    private readonly reports: AdminReportService,
+    private readonly notifications: NotificationRealtimeService,
+  ) {}
 
   @Get()
   @Header('Cache-Control', 'private, no-store')
@@ -34,30 +38,36 @@ export class AdminReportsController {
 
   @Patch(':id/start-review')
   @Header('Cache-Control', 'private, no-store')
-  startReview(
+  async startReview(
     @Param('id', ParseUUIDPipe) id: string,
     @Req() request: SessionRequest,
   ) {
-    return this.reports.startReview(id, request.user.id);
+    const result = await this.reports.startReview(id, request.user.id);
+    this.notifications.publishAdminQueueUpdated();
+    return result;
   }
 
   @Patch(':id/resolve')
   @Header('Cache-Control', 'private, no-store')
-  resolve(
+  async resolve(
     @Param('id', ParseUUIDPipe) id: string,
     @Req() request: SessionRequest,
     @Body() dto: ReportResolutionDto,
   ) {
-    return this.reports.resolve(id, request.user.id, dto);
+    const result = await this.reports.resolve(id, request.user.id, dto);
+    this.notifications.publishAdminQueueUpdated();
+    return result;
   }
 
   @Patch(':id/dismiss')
   @Header('Cache-Control', 'private, no-store')
-  dismiss(
+  async dismiss(
     @Param('id', ParseUUIDPipe) id: string,
     @Req() request: SessionRequest,
     @Body() dto: ReportResolutionDto,
   ) {
-    return this.reports.dismiss(id, request.user.id, dto);
+    const result = await this.reports.dismiss(id, request.user.id, dto);
+    this.notifications.publishAdminQueueUpdated();
+    return result;
   }
 }

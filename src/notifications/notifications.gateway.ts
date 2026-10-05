@@ -63,6 +63,7 @@ export class NotificationsGateway
           // The authenticated database identity is authoritative; ignore any
           // user ID or role supplied in the client's handshake payload.
           socket.data.authenticatedUserId = user.id;
+          socket.data.authenticatedRole = user.role;
           next();
         })
         .catch(() => next(new Error('Unauthorized.')));
@@ -72,11 +73,12 @@ export class NotificationsGateway
   handleConnection(client: Socket) {
     const socket = client as NotificationSocket;
     const userId = socket.data.authenticatedUserId;
-    if (!userId) {
+    const role = socket.data.authenticatedRole;
+    if (!userId || !role) {
       socket.disconnect(true);
       return;
     }
-    this.notifications.connect(userId, socket);
+    this.notifications.connect(userId, role, socket);
 
     const token: unknown = socket.handshake.auth?.token;
     if (typeof token !== 'string') {
@@ -87,7 +89,8 @@ export class NotificationsGateway
       void this.sessions
         .authenticateToken(token)
         .then((currentUser) => {
-          if (currentUser.id !== userId) socket.disconnect(true);
+          if (currentUser.id !== userId || currentUser.role !== role)
+            socket.disconnect(true);
         })
         .catch(() => socket.disconnect(true));
     }, SESSION_REVALIDATION_INTERVAL_MS);

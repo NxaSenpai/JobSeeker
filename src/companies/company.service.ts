@@ -11,6 +11,7 @@ import { User, UserRole } from '../users/entities/user.entity';
 import { Job, JobStatus } from '../account/entities/job.entity';
 import { Company } from '../account/entities/company.entity';
 import { CompaniesQueryDto, UpdateCompanyProfileDto } from './company.dto';
+import { NotificationRealtimeService } from '../notifications/notification-realtime.service';
 
 function slugPart(value: string) {
   return value
@@ -66,6 +67,7 @@ export class CompanyService {
     private readonly companies: Repository<Company>,
     @InjectRepository(Job)
     private readonly jobs: Repository<Job>,
+    private readonly notifications: NotificationRealtimeService,
   ) {}
 
   async ensureOwnProfile(user: User) {
@@ -78,7 +80,7 @@ export class CompanyService {
     const id = randomUUID();
     const name = user.companyName?.trim() || 'Company';
     try {
-      return await this.companies.save(
+      const created = await this.companies.save(
         this.companies.create({
           id,
           ownerUserId: user.id,
@@ -89,6 +91,8 @@ export class CompanyService {
           socialLinks: {},
         }),
       );
+      this.notifications.publishAdminQueueUpdated();
+      return created;
     } catch (error) {
       if ((error as { code?: string }).code !== '23505') throw error;
       const createdByConcurrentRequest = await this.companies.findOneBy({

@@ -1,6 +1,7 @@
 import type { Server, Socket } from 'socket.io';
 import { ConfigService } from '@nestjs/config';
 import { SessionGuard } from '../auth/session.guard';
+import { UserRole } from '../users/entities/user.entity';
 import { NotificationRealtimeService } from './notification-realtime.service';
 import { NotificationsGateway } from './notifications.gateway';
 
@@ -64,12 +65,16 @@ describe('NotificationsGateway', () => {
 
   it('binds the server-verified account, ignoring a client-selected user ID', async () => {
     const { sessions, notifications, gateway, middleware } = setup();
-    sessions.authenticateToken.mockResolvedValue({ id: authenticatedUserId });
+    sessions.authenticateToken.mockResolvedValue({
+      id: authenticatedUserId,
+      role: UserRole.ADMIN,
+    });
     const client = {
       handshake: {
         auth: {
           token: 'verified-jwt',
           userId: '22222222-2222-4222-8222-222222222222',
+          role: UserRole.USER,
         },
         headers: {},
       },
@@ -85,6 +90,7 @@ describe('NotificationsGateway', () => {
     expect(sessions.authenticateToken).toHaveBeenCalledWith('verified-jwt');
     expect(notifications.connect).toHaveBeenCalledWith(
       authenticatedUserId,
+      UserRole.ADMIN,
       client,
     );
     gateway.handleDisconnect(client);
@@ -112,7 +118,7 @@ describe('NotificationsGateway', () => {
     const disconnect = jest.fn();
     const client = {
       handshake: { auth: { token: 'revoked-after-connect' }, headers: {} },
-      data: { authenticatedUserId },
+      data: { authenticatedUserId, authenticatedRole: UserRole.ADMIN },
       disconnect,
     } as unknown as Socket;
     gateway.handleConnection(client);

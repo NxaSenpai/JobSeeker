@@ -248,12 +248,20 @@ export class AdminOperationsService {
     const builder = this.jobs
       .createQueryBuilder('job')
       .leftJoinAndSelect('job.companyProfile', 'company');
-    builder.andWhere('job.moderationStatus = :moderationStatus', {
-      moderationStatus: query.moderationStatus ?? JobModerationStatus.PENDING,
-    });
-    builder.andWhere('job.status = :status', {
-      status: query.status ?? JobStatus.PUBLISHED,
-    });
+    if (query.moderationStatus && query.moderationStatus !== 'ALL') {
+      builder.andWhere('job.moderationStatus = :moderationStatus', {
+        moderationStatus: query.moderationStatus,
+      });
+    } else if (!query.moderationStatus) {
+      builder.andWhere('job.moderationStatus = :moderationStatus', {
+        moderationStatus: JobModerationStatus.PENDING,
+      });
+    }
+    if (query.status && query.status !== 'ALL') {
+      builder.andWhere('job.status = :status', { status: query.status });
+    } else if (!query.status) {
+      builder.andWhere('job.status = :status', { status: JobStatus.PUBLISHED });
+    }
     if (query.search?.trim()) {
       builder.andWhere(
         '(job.title ILIKE :search OR job.company ILIKE :search OR company.name ILIKE :search OR job.location ILIKE :search)',
@@ -297,6 +305,16 @@ export class AdminOperationsService {
       actorUserId,
       JobModerationStatus.HIDDEN,
       dto.reason,
+    );
+  }
+
+  restoreJob(id: string, actorUserId: string) {
+    return this.changeJobModeration(
+      id,
+      actorUserId,
+      JobModerationStatus.APPROVED,
+      undefined,
+      'JOB_RESTORED',
     );
   }
 
@@ -392,6 +410,7 @@ export class AdminOperationsService {
     actorUserId: string,
     moderationStatus: JobModerationStatus,
     reason?: string,
+    actionOverride?: string,
   ) {
     return this.database.transaction(async (manager) => {
       const job = await manager.findOne(Job, {
@@ -411,7 +430,7 @@ export class AdminOperationsService {
         await this.writeAudit(
           manager,
           actorUserId,
-          `JOB_${moderationStatus}`,
+          actionOverride ?? `JOB_${moderationStatus}`,
           'JOB',
           id,
           {

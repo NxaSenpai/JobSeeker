@@ -137,4 +137,35 @@ describe('AdminOperationsService', () => {
     });
     expect(result.job.moderationStatus).toBe(JobModerationStatus.HIDDEN);
   });
+
+  it('restores a moderated job to approved and records a distinct audit action', async () => {
+    const job = {
+      id: 'job-restore',
+      title: 'Community coordinator',
+      company: 'Test Company',
+      moderationStatus: JobModerationStatus.HIDDEN,
+      moderationNote: 'Review completed',
+      responsibilities: [],
+      requirements: [],
+      benefits: [],
+      skills: [],
+      salaryMin: null,
+      salaryMax: null,
+      companyProfile: null,
+    } as unknown as Job;
+    findOne.mockResolvedValue(job);
+
+    await service.restoreJob('job-restore', actorId);
+
+    expect(job.moderationStatus).toBe(JobModerationStatus.APPROVED);
+    expect(job.moderationNote).toBeNull();
+    expect(auditCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        actorUserId: actorId,
+        action: 'JOB_RESTORED',
+        subjectType: 'JOB',
+        subjectId: 'job-restore',
+      }),
+    );
+  });
 });
