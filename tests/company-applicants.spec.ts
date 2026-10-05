@@ -105,6 +105,11 @@ async function mockCompanyApplicants(context: BrowserContext) {
     if (method === 'OPTIONS') return reply({})
     if (path === '/auth/me' && method === 'GET') return reply({ user: session.user })
 
+    if (path === '/company/jobs' && method === 'GET') {
+      if (!request.headers().authorization) return reply({ message: 'Sign in required.' }, 401)
+      return reply({ jobs: [], total: 0, page: 1, limit: 100 })
+    }
+
     if (path === '/company/applications' && method === 'GET') {
       if (!request.headers().authorization) return reply({ message: 'Sign in required.' }, 401)
       const params = new URL(request.url()).searchParams
@@ -189,4 +194,23 @@ test('company dashboard applicant activity and counts come from the backend list
   await expect(latestApplications.getByText('Sophea Chan', { exact: true })).toBeVisible()
   await expect(latestApplications.getByText('Backend Engineer', { exact: true })).toBeVisible()
   await expect(page.locator('.summary-strip .summary-item').filter({ hasText: 'Applicants' }).locator('strong')).toHaveText('1')
+})
+
+test('company sidebar stays docked when switching workspace tabs and reloading', async ({ page, context }, testInfo) => {
+  test.skip(testInfo.project.name === 'mobile', 'The dock control is a desktop sidebar control.')
+  await mockCompanyApplicants(context)
+  await page.goto('/company/dashboard')
+
+  await page.getByRole('button', { name: 'Dock sidebar' }).click()
+  await expect(page.locator('.company-shell')).toHaveClass(/sidebar-is-collapsed/)
+
+  await page.locator('.sidebar-nav .sidebar-link').nth(2).click()
+  await expect(page).toHaveURL('/company/applicants')
+  await expect(page.locator('.dashboard-header').getByRole('heading', { name: 'Applicants' })).toBeVisible()
+  await expect(page.locator('.company-shell')).toHaveClass(/sidebar-is-collapsed/)
+  await expect(page.getByRole('button', { name: 'Expand sidebar' })).toHaveAttribute('aria-pressed', 'true')
+
+  await page.reload()
+  await expect(page.locator('.company-shell')).toHaveClass(/sidebar-is-collapsed/)
+  await expect(page.getByRole('button', { name: 'Expand sidebar' })).toHaveAttribute('aria-pressed', 'true')
 })

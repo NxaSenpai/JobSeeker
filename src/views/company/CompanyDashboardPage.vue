@@ -19,15 +19,17 @@ import {
   type ApplicantStatus,
   type CompanyApplicantListItem,
 } from '@/services/companyApplicants'
-import { companyJobs, relativeApplicationDate } from '@/services/companyWorkspace'
+import { relativeApplicationDate } from '@/services/companyWorkspace'
+import { companyJobs, companyJobsError, companyJobsLoading, loadCompanyJobs } from '@/services/companyJobs'
 import { companyDarkMode, syncCompanyDarkMode } from '@/services/companyTheme'
+import { useSidebarDock } from '@/composables/useSidebarDock'
 
 const search = ref('')
 const searchInput = ref<HTMLInputElement | null>(null)
 const showNotifications = ref(false)
 const notificationsRead = ref(false)
 const showSidebarProfileMenu = ref(false)
-const sidebarCollapsed = ref(false)
+const sidebarCollapsed = useSidebarDock('jobseeker.sidebar.docked.company')
 const mobileMenuOpen = ref(false)
 const route = useRoute()
 const router = useRouter()
@@ -92,6 +94,9 @@ async function loadApplicantSummary() {
 
 watch(() => route.name, name => {
   if (name === 'CompanyDashboardPage') void loadApplicantSummary()
+  if (name === 'CompanyDashboardPage' || name === 'CompanyJobsPage' || name === 'CompanyProfilePage') {
+    void loadCompanyJobs(true).catch(() => undefined)
+  }
 }, { immediate: true })
 
 function signOut() {
@@ -119,7 +124,6 @@ const interviewCount = computed(() => applicantCounts.value.INTERVIEW)
 const awaitingFeedbackCount = computed(() => applicantCounts.value.SHORTLISTED)
 const decisionCount = computed(() => reviewCount.value + interviewCount.value + awaitingFeedbackCount.value)
 const hasOpenRoles = computed(() => openRoleCount.value > 0)
-const publishedViewCount = computed(() => companyJobs.value.filter(job => job.status === 'Published').reduce((total, job) => total + job.views, 0))
 const shortlistRate = computed(() => applicantTotal.value ? Math.round(awaitingFeedbackCount.value / applicantTotal.value * 100) : 0)
 const roleMomentum = computed(() => [...companyJobs.value]
   .filter(job => job.status === 'Published')
@@ -169,9 +173,9 @@ const summaryStatement = computed(() => {
 
 const compactSummary = computed(() => [
   { label: 'Needs a decision', value: String(decisionCount.value), detail: decisionCount.value ? 'Across the active queue' : 'Queue is clear', tone: decisionCount.value ? 'urgent' : 'neutral' },
-  { label: 'Live roles', value: String(openRoleCount.value), detail: hasOpenRoles.value ? 'Accepting applicants' : 'Create a role to start', tone: 'neutral' },
+  { label: 'Live roles', value: companyJobsLoading.value && !companyJobs.value.length ? '…' : companyJobsError.value && !companyJobs.value.length ? '—' : String(openRoleCount.value), detail: companyJobsError.value ? 'Job data unavailable' : hasOpenRoles.value ? 'Accepting applicants' : 'Create a role to start', tone: 'neutral' },
   { label: 'Applicants', value: String(applicantTotal.value), detail: 'In the current queue', tone: 'neutral' },
-  { label: 'Role views', value: publishedViewCount.value.toLocaleString(), detail: 'Across live roles', tone: 'neutral' },
+  { label: 'Role views', value: '—', detail: 'Not tracked yet', tone: 'neutral' },
 ])
 
 const attentionItems = computed(() => {
@@ -376,6 +380,10 @@ onBeforeUnmount(() => window.removeEventListener('keydown', handleShortcut))
             <strong>{{ item.value }}</strong>
           </div>
         </section>
+        <div v-if="companyJobsError" class="job-data-error" role="alert">
+          <span>Job data could not be refreshed: {{ companyJobsError }}</span>
+          <button type="button" @click="loadCompanyJobs(true).catch(() => undefined)">Try again</button>
+        </div>
 
         <section class="operations-grid" aria-label="Hiring pipeline health">
           <article class="pipeline-panel">
@@ -396,7 +404,15 @@ onBeforeUnmount(() => window.removeEventListener('keydown', handleShortcut))
             <div v-if="roleWatch.length" class="role-watch-list">
               <div v-for="item in roleWatch" :key="item.label" class="role-watch-item"><div><strong>{{ item.label }}</strong><span>{{ item.title }}</span><small>{{ item.detail }}</small></div><b>{{ item.value }}</b><button type="button" :aria-label="`${item.action}: ${item.label}`" @click="selectNav(item.target)">{{ item.action }} <UiIcon name="chevron" :size="14" /></button></div>
             </div>
-            <div v-else class="role-empty"><strong>No open roles.</strong><p v-if="decisionCount">{{ decisionCount }} candidates remain from closed roles. Review or archive them before reopening a role.</p><p v-else>Create a role to start receiving applicants.</p><button type="button" @click="openJobComposer">Create a role <UiIcon name="plus" :size="14" /></button></div>
+            <div v-else class="role-empty">
+              <strong>{{ companyJobsLoading && !companyJobs.length ? 'Loading roles…' : companyJobsError ? 'Role data unavailable.' : 'No open roles.' }}</strong>
+              <p v-if="companyJobsError">The live role list could not be loaded. Retry to see the current company postings.</p>
+              <p v-else-if="companyJobsLoading && !companyJobs.length">Getting postings from your company account.</p>
+              <p v-else-if="decisionCount">{{ decisionCount }} candidates remain from closed roles. Review or archive them before reopening a role.</p>
+              <p v-else>Create a role to start receiving applicants.</p>
+              <button v-if="companyJobsError" type="button" @click="loadCompanyJobs(true).catch(() => undefined)">Try again</button>
+              <button v-else type="button" @click="openJobComposer">Create a role <UiIcon name="plus" :size="14" /></button>
+            </div>
           </aside>
         </section>
 
@@ -629,6 +645,8 @@ button:focus-visible, select:focus-visible, input:focus-visible { outline: 3px s
 .text-button:hover { color: var(--ink); }
 
 .summary-strip { margin-bottom: 22px; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); background: transparent; }
+.job-data-error { margin: -9px 0 19px; padding: 11px 14px; border: 1px solid #f0d2d2; border-radius: 7px; display: flex; align-items: center; justify-content: space-between; gap: 12px; background: #fff8f8; color: #8d4444; font-size: 13px; }
+.job-data-error button { flex: 0 0 auto; padding: 0; border: 0; background: transparent; color: #604bc0; font-size: 12px; font-weight: 600; cursor: pointer; }
 .summary-item { min-width: 0; padding: 15px 22px 16px; display: grid; grid-template-columns: auto auto 1fr; align-items: baseline; column-gap: 9px; }
 .summary-item + .summary-item { border-left: 1px solid var(--line); }
 .summary-item > span { grid-column: 1 / -1; margin-bottom: 4px; color: var(--muted); font-size: 12px; font-weight: 500; }

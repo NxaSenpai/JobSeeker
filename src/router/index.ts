@@ -18,6 +18,7 @@ import ResetPasswordPage from "@/views/auth/ResetPasswordPage.vue";
 import CompanyDashboardPage from "@/views/company/CompanyDashboardPage.vue";
 import AdminDashboardPage from "@/views/admin/AdminDashboardPage.vue";
 import AdminReportsPage from "@/views/admin/AdminReportsPage.vue";
+import AdminCompaniesPage from "@/views/admin/AdminCompaniesPage.vue";
 import { dashboardPathForRole, type UserRole } from "@/services/auth";
 import { verifySession } from "@/services/session";
 
@@ -193,6 +194,42 @@ const router = createRouter({
       path: "/admin/reports",
       name: "AdminReportsPage",
       component: AdminReportsPage,
+      meta: { requiresAuth: true, role: "ADMIN" },
+    },
+    {
+      path: "/admin/audit",
+      name: "AdminAuditPage",
+      component: () => import("@/views/admin/AdminAuditPage.vue"),
+      meta: { requiresAuth: true, role: "ADMIN" },
+    },
+    {
+      path: "/admin/users",
+      name: "AdminUsersPage",
+      component: () => import("@/views/admin/AdminUsersPage.vue"),
+      meta: { requiresAuth: true, role: "ADMIN" },
+    },
+    {
+      path: "/admin/jobs",
+      name: "AdminJobsPage",
+      component: () => import("@/views/admin/AdminJobsPage.vue"),
+      meta: { requiresAuth: true, role: "ADMIN" },
+    },
+    {
+      path: "/admin/companies",
+      name: "AdminCompaniesPage",
+      component: AdminCompaniesPage,
+      meta: { requiresAuth: true, role: "ADMIN" },
+    },
+    {
+      path: "/admin/profile",
+      name: "AdminProfilePage",
+      component: () => import("@/views/admin/AdminProfilePage.vue"),
+      meta: { requiresAuth: true, role: "ADMIN" },
+    },
+    {
+      path: "/admin/settings",
+      name: "AdminSettingsPage",
+      component: () => import("@/views/admin/AdminSettingsPage.vue"),
       meta: { requiresAuth: true, role: "ADMIN" },
     },
   ],

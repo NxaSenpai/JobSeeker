@@ -3,7 +3,7 @@ import { computed, reactive, ref } from 'vue'
 import verifyLogo from '@/assets/img/verify_logo.png'
 import CompanyPageHeader from '@/components/company/CompanyPageHeader.vue'
 import { displayNameForUser, getAuthSession, initialsForUser } from '@/services/auth'
-import { companyJobs } from '@/services/companyWorkspace'
+import { companyJobs } from '@/services/companyJobs'
 import { readCompanySettings, saveCompanySettings, type CompanySettings } from '@/services/companySettings'
 
 const user = getAuthSession()?.user

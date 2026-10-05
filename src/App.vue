@@ -12,11 +12,6 @@ watch(currentUser, (user) => {
 
 <template>
   <router-view v-slot="{ Component }">
-    <component v-if="route.meta.role === 'COMPANY'" :is="Component" />
-    <Transition v-else name="route" mode="out-in">
-      <div :key="route.matched[0]?.path || route.path" class="route-stage">
-        <component :is="Component" />
-      </div>
-    </Transition>
+    <component :is="Component" />
   </router-view>
 </template>
