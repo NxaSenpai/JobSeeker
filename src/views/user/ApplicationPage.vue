@@ -4,7 +4,7 @@ import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router'
 import AccountPageFrame from '@/components/public/AccountPageFrame.vue'
 import type { Job } from '@/data/catalog'
 import { currentUser, displayNameForUser } from '@/services/auth'
-import { apiRequest } from '@/services/api'
+import { apiBlob, apiRequest } from '@/services/api'
 import { applicationDrafts, activityError, loadActivity, saveApplicationDraft } from '@/services/activity'
 import { fileSize, type ApplicationRecord, type CandidateProfile, type ResumeRecord } from '@/services/candidate'
 import { getPublicJob } from '@/services/publicCatalog'
@@ -16,8 +16,12 @@ const form = reactive({ description: '', coverLetter: '', resumeUrl: '', resumeI
 const dirty = ref(false); const loading = ref(true); const busy = ref(false); const uploading = ref(false)
 const formReady = ref(false)
 const error = ref(''); const success = ref(''); const existingApplication = ref<ApplicationRecord | null>(null)
+const selectedResume = computed(() => resumes.value.find(resume => resume.id === form.resumeId) ?? null)
+const resumePreviewUrl = ref(''); const resumePreviewLoading = ref(false); const resumePreviewError = ref('')
+const resumeFileInput = ref<HTMLInputElement | null>(null)
 const expired = computed(() => !!job.value?.deadline && new Date(job.value.deadline).getTime() <= Date.now())
 let generation = 0
+let resumePreviewSequence = 0
 async function load() {
   const version = ++generation
   const jobId = String(route.params.id)
@@ -43,6 +47,29 @@ async function load() {
   finally { if (version === generation) loading.value = false }
 }
 watch(() => route.params.id, load, { immediate: true })
+watch(() => form.resumeId, resumeId => { void loadResumePreview(resumeId) })
+function releaseResumePreview() {
+  if (resumePreviewUrl.value) URL.revokeObjectURL(resumePreviewUrl.value)
+  resumePreviewUrl.value = ''
+}
+async function loadResumePreview(resumeId: string) {
+  const sequence = ++resumePreviewSequence
+  releaseResumePreview()
+  resumePreviewError.value = ''
+  if (!resumeId) { resumePreviewLoading.value = false; return }
+  resumePreviewLoading.value = true
+  try {
+    const blob = await apiBlob(`/account/resumes/${encodeURIComponent(resumeId)}/preview`)
+    if (sequence !== resumePreviewSequence || form.resumeId !== resumeId) return
+    const pdf = blob.type.toLowerCase().includes('pdf') ? blob : new Blob([blob], { type: 'application/pdf' })
+    resumePreviewUrl.value = URL.createObjectURL(pdf)
+  } catch (cause) {
+    if (sequence === resumePreviewSequence) resumePreviewError.value = cause instanceof Error ? cause.message : 'Unable to preview this résumé.'
+  } finally {
+    if (sequence === resumePreviewSequence) resumePreviewLoading.value = false
+  }
+}
+function openResumePicker() { resumeFileInput.value?.click() }
 async function upload(event: Event) {
   const input = event.target as HTMLInputElement; const file = input.files?.[0]
   if (!file) return
@@ -80,7 +107,7 @@ async function submit() {
 }
 function beforeUnload(event: BeforeUnloadEvent) { if (dirty.value) { event.preventDefault(); event.returnValue = '' } }
 window.addEventListener('beforeunload', beforeUnload)
-onBeforeUnmount(() => { generation++; window.removeEventListener('beforeunload', beforeUnload) })
+onBeforeUnmount(() => { generation++; resumePreviewSequence++; releaseResumePreview(); window.removeEventListener('beforeunload', beforeUnload) })
 onBeforeRouteLeave(() => !currentUser.value || !dirty.value || window.confirm('Leave without saving your application changes?'))
 </script>
 
@@ -107,7 +134,14 @@ onBeforeRouteLeave(() => !currentUser.value || !dirty.value || window.confirm('L
             <div class="account-form-row"><label class="account-field">Phone number<input v-model="form.phone" type="tel" autocomplete="tel" maxlength="40" placeholder="Optional" /></label><label class="account-field">Portfolio or website<input v-model="form.portfolioUrl" type="url" maxlength="2048" placeholder="https://…" /><small>Optional HTTPS link</small></label></div>
             <div class="section-heading"><span>02</span><div><h2>Your CV / résumé</h2><p class="account-muted">Select a saved document or upload a new version.</p></div></div>
             <label class="account-field">Select a résumé<select v-model="form.resumeId" required><option value="" disabled>Choose your PDF résumé</option><option v-for="resume in resumes" :key="resume.id" :value="resume.id">{{ resume.fileName }} · {{ fileSize(resume.fileSize) }}{{ resume.isDefault ? ' · Primary' : '' }}</option></select></label>
-            <label class="upload-area"><strong>{{ uploading ? 'Uploading your CV…' : 'Upload a PDF résumé' }}</strong><span>PDF up to 10 MB. Also saved to your profile for future applications.</span><input type="file" accept="application/pdf,.pdf" @change="upload" /></label>
+            <section class="resume-preview-panel" aria-label="Selected résumé preview">
+              <header class="resume-preview-heading"><div class="resume-preview-title"><span>CV PREVIEW</span><strong>{{ selectedResume?.fileName || 'No résumé selected' }}</strong><small v-if="selectedResume">PDF · {{ fileSize(selectedResume.fileSize) }}{{ selectedResume.isDefault ? ' · Primary' : '' }}</small></div><button type="button" class="resume-upload-button" :disabled="uploading" @click="openResumePicker">{{ uploading ? 'Uploading…' : 'Upload new PDF' }}</button></header>
+              <p v-if="resumePreviewLoading" class="resume-preview-state" role="status">Loading the selected CV…</p>
+              <div v-else-if="resumePreviewError" class="resume-preview-state resume-preview-error" role="alert"><span>{{ resumePreviewError }}</span><button type="button" @click="loadResumePreview(form.resumeId)">Try preview again</button></div>
+              <div v-else-if="resumePreviewUrl" class="resume-preview-frame"><iframe :src="resumePreviewUrl" :title="`Preview of ${selectedResume?.fileName || 'selected résumé'}`"></iframe></div>
+              <p v-else class="resume-preview-state">Select a saved résumé above to review it here, or upload a PDF. Your file is saved to your profile for future applications.</p>
+              <input ref="resumeFileInput" class="resume-upload-input" type="file" accept="application/pdf,.pdf" @change="upload" />
+            </section>
             <details v-if="form.resumeUrl" class="account-muted"><summary>Previous draft résumé link</summary><p class="mt-2 break-all">{{ form.resumeUrl }}</p><p>Upload a PDF above to include it in this application.</p></details>
             <div class="section-heading"><span>03</span><div><h2>A little more about you</h2><p class="account-muted">An optional cover letter can add useful context.</p></div></div>
             <label class="account-field">Cover letter<textarea v-model="form.coverLetter" rows="7" maxlength="10000" placeholder="Share an achievement, explain your career goals, or describe what you would bring to the team." /><small>{{ form.coverLetter.length.toLocaleString() }} / 10,000 characters</small></label>
@@ -125,7 +159,8 @@ onBeforeRouteLeave(() => !currentUser.value || !dirty.value || window.confirm('L
 .application-layout { display: grid; grid-template-columns: 300px minmax(0, 1fr); gap: 32px; align-items: start; }
 .role-summary { background: #faf9ff; }.application-fields { display: grid; grid-template-columns: minmax(0, 1fr); min-width: 0; gap: 24px; border: 0; padding: 0; }
 .section-heading { display: flex; gap: 14px; align-items: start; padding-top: 14px; }.section-heading > span { display: grid; place-items: center; width: 36px; height: 36px; flex-shrink: 0; border-radius: 10px; background: #eeeafa; color: #5c44cb; font-size: 12px; font-weight: 700; }.section-heading h2 { font-size: 20px; }
-.required-label { color: #787390; font-size: 12px; font-weight: 400; }.upload-area { display: grid; gap: 10px; padding: 22px; border: 1px dashed #bcb1df; border-radius: 10px; background: #fcfbff; }.upload-area strong { font-size: 14px; }.upload-area span { font-size: 12px; color: #68759d; }.upload-area input { max-width: 100%; font-size: 13px; }
+.required-label { color: #787390; font-size: 12px; font-weight: 400; }.resume-preview-panel { display: grid; min-width: 0; gap: 14px; padding: 16px; border: 1px solid #e4dff1; border-radius: 12px; background: #fbfaff; }.resume-preview-heading { display: flex; min-width: 0; align-items: center; justify-content: space-between; gap: 14px; }.resume-preview-title { display: grid; min-width: 0; gap: 4px; }.resume-preview-title > span { color: #7869ad; font-size: 10px; font-weight: 700; letter-spacing: .08em; }.resume-preview-title strong { overflow: hidden; color: #29365e; font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }.resume-preview-title small { color: #7d86a2; font-size: 11px; }.resume-upload-button { flex: 0 0 auto; padding: 9px 12px; border: 1px solid #dcd5f4; border-radius: 8px; background: white; color: #5d48c9; font-size: 12px; font-weight: 600; }.resume-upload-button:disabled { opacity: .55; cursor: wait; }.resume-preview-frame { height: clamp(320px, 58vh, 560px); overflow: hidden; border: 1px solid #dfdce8; border-radius: 8px; background: #e9eaf0; }.resume-preview-frame iframe { width: 100%; height: 100%; border: 0; }.resume-preview-state { display: grid; min-height: 250px; place-items: center; gap: 12px; padding: 22px; border: 1px dashed #d8d1e9; border-radius: 8px; color: #697493; font-size: 13px; line-height: 1.6; text-align: center; }.resume-preview-error { color: #a33f55; }.resume-preview-error button { color: #5d48c9; font-weight: 600; text-decoration: underline; }.resume-upload-input { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; clip-path: inset(50%); }
 .consent-field { display: flex; gap: 12px; align-items: start; font-size: 13px; line-height: 1.7; color: #596484; }.consent-field input { margin-top: 5px; width: 17px; height: 17px; accent-color: #705aef; }.application-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; border-top: 1px solid #ece8f5; padding-top: 24px; }
 @media(max-width: 800px) { .application-layout { grid-template-columns: 1fr; gap: 20px; } }
+@media(max-width: 520px) { .resume-preview-panel { padding: 12px; }.resume-preview-heading { align-items: flex-start; flex-direction: column; }.resume-upload-button { align-self: flex-start; }.resume-preview-frame { height: 60vh; min-height: 300px; } }
 </style>

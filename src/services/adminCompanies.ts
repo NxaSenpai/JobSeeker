@@ -1,4 +1,4 @@
-import { apiRequest } from './api'
+import { apiRequest, apiUrl } from './api'
 
 export type AdminCompany = {
   id: string
@@ -40,20 +40,39 @@ export type AdminCompanyListResponse = {
   limit: number
 }
 
+export type AdminCompanyStatus = 'PENDING' | 'VERIFIED' | 'SUSPENDED'
+
 export type AdminCompanyQuery = {
   page?: number
   limit?: number
   search?: string
+  status?: AdminCompanyStatus | ''
 }
 
-export function listAdminCompanies(query: AdminCompanyQuery = {}) {
+export async function listAdminCompanies(query: AdminCompanyQuery = {}) {
   const params = new URLSearchParams({
     page: String(query.page ?? 1),
     limit: String(query.limit ?? 20),
-    status: 'PENDING',
   })
   if (query.search?.trim()) params.set('search', query.search.trim())
-  return apiRequest<AdminCompanyListResponse>(`/admin/companies?${params.toString()}`)
+  if (query.status) params.set('status', query.status)
+  const result = await apiRequest<AdminCompanyListResponse>(`/admin/companies?${params.toString()}`)
+  return {
+    ...result,
+    companies: result.companies.map(item => ({
+      ...item,
+      company: {
+        ...item.company,
+        logoUrl: isManagedLogoUrl(item.company.logoUrl)
+          ? apiUrl(item.company.logoUrl)
+          : item.company.logoUrl,
+      },
+    })),
+  }
+}
+
+function isManagedLogoUrl(value: string | null): value is string {
+  return Boolean(value && /^\/companies\/[\da-f-]{36}\/logo\?v=[\da-f-]{36}\.jpg$/i.test(value))
 }
 
 export function approveAdminCompany(id: string) {
@@ -67,5 +86,19 @@ export function rejectAdminCompany(id: string, reason: string) {
   return apiRequest<{ company: AdminCompany }>(
     `/admin/companies/${encodeURIComponent(id)}/reject`,
     { method: 'PATCH', body: JSON.stringify({ reason }) },
+  )
+}
+
+export function suspendAdminCompany(id: string, reason: string) {
+  return apiRequest<{ company: AdminCompany }>(
+    `/admin/companies/${encodeURIComponent(id)}/suspend`,
+    { method: 'PATCH', body: JSON.stringify({ reason }) },
+  )
+}
+
+export function unsuspendAdminCompany(id: string) {
+  return apiRequest<{ company: AdminCompany }>(
+    `/admin/companies/${encodeURIComponent(id)}/unsuspend`,
+    { method: 'PATCH' },
   )
 }

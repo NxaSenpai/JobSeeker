@@ -2,6 +2,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import AdminWorkspaceLayout from '@/components/admin/AdminWorkspaceLayout.vue'
 import UiIcon from '@/components/company/UiIcon.vue'
+import { adminDarkMode } from '@/services/adminPreferences'
 import { apiRequest } from '@/services/api'
 
 type AuditRecord = {
@@ -72,7 +73,7 @@ function changePage(nextPage: number) {
     search-placeholder="Search action or record ID"
     @search="applySearch"
   >
-    <section class="audit-page" aria-labelledby="audit-heading">
+    <section class="audit-page" :class="{ 'theme-dark': adminDarkMode }" aria-labelledby="audit-heading">
       <div class="page-heading">
         <div>
           <p class="eyebrow">Accountability</p>
@@ -155,6 +156,17 @@ function changePage(nextPage: number) {
 .pagination { margin-top: 15px; display: flex; align-items: center; justify-content: center; gap: 16px; color: #778194; font-size: 11px; }
 .pagination button { min-height: 32px; padding: 0 9px; border: 1px solid #dde0e6; border-radius: 5px; background: #fff; color: #4b5870; font-size: 11px; cursor: pointer; }
 .pagination button:disabled { opacity: .45; cursor: not-allowed; }
+.audit-page.theme-dark { --page-ink: #edf1f7; --page-muted: #b4bfd1; --page-line: #2c3545; --page-line-strong: #455268; --page-surface: #171e2a; --page-raised: #1c2533; --page-accent: #b8aaff; color: var(--page-muted); }
+.audit-page.theme-dark :is(.page-heading h2, .record-total strong, .event-copy strong, .state-panel strong) { color: var(--page-ink) !important; }
+.audit-page.theme-dark :is(.page-heading p:not(.eyebrow), .record-total span, .event-copy small, .subject-id, .actor-email, .log-row time, .event-details span, .event-details code, .pagination) { color: var(--page-muted) !important; }
+.audit-page.theme-dark :is(.log-list, .log-heading, .log-row, .state-panel, .event-details, .event-details pre) { background-color: var(--page-raised) !important; border-color: var(--page-line) !important; box-shadow: none; }
+.audit-page.theme-dark .log-heading { color: var(--page-muted) !important; }
+.audit-page.theme-dark :is(.log-entry + .log-entry, .event-details, .pagination) { border-color: var(--page-line) !important; }
+.audit-page.theme-dark .event-details pre { background-color: var(--page-surface) !important; color: var(--page-muted) !important; }
+.audit-page.theme-dark :is(.log-row button, .pagination button) { border-color: var(--page-line-strong) !important; background-color: var(--page-surface) !important; color: var(--page-muted) !important; }
+.audit-page.theme-dark .log-row button:hover { background-color: #252d3b !important; color: var(--page-accent) !important; }
+.audit-page.theme-dark .state-panel button { color: var(--page-accent) !important; }
+.audit-page.theme-dark .error-state { border-color: #68424b !important; background-color: #38242b !important; color: #f0aab3 !important; }
 @media (max-width: 820px) {
   .log-heading { display: none; }
   .log-row { grid-template-columns: minmax(0, 1fr) auto; gap: 7px 12px; }

@@ -1,20 +1,18 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import CompanyPageHeader from '@/components/company/CompanyPageHeader.vue'
 import UiIcon from '@/components/company/UiIcon.vue'
 import {
-  allowedApplicantStatusChanges,
   applicantAvatarColor,
   applicantInitials,
   applicantName,
   applicantStatusClass,
   applicantStatusLabel,
   applicantStatuses,
-  fetchCompanyApplicant,
+  downloadCompanyApplicantAvatar,
   fetchCompanyApplicants,
-  saveCompanyApplicantStatus,
   type ApplicantStatus,
-  type CompanyApplicantDetails,
   type CompanyApplicantListItem,
 } from '@/services/companyApplicants'
 import {
@@ -24,6 +22,7 @@ import {
 type ApplicantFilter = 'All' | ApplicantStatus
 
 const props = withDefaults(defineProps<{ search?: string }>(), { search: '' })
+const router = useRouter()
 const selectedFilter = ref<ApplicantFilter>('All')
 const applicants = ref<CompanyApplicantListItem[]>([])
 const total = ref(0)
@@ -31,29 +30,21 @@ const page = ref(1)
 const pageSize = 20
 const loading = ref(true)
 const error = ref('')
-const selectedId = ref('')
-const selectedApplicant = ref<CompanyApplicantDetails | null>(null)
-const selectedCandidateSkills = computed(() => selectedApplicant.value?.candidate.skills ?? [])
-const detailLoading = ref(false)
-const detailError = ref('')
-const statusError = ref('')
-const statusMessage = ref('')
-const savingStatus = ref(false)
 const reviewCount = ref(0)
+const applicantAvatarUrls = ref<Record<string, string>>({})
 let requestVersion = 0
+let avatarRequestVersion = 0
 let searchTimer: ReturnType<typeof setTimeout> | undefined
+const avatarObjectUrls = new Map<string, string>()
 
 const filters = computed(() => [
   { value: 'All' as const, label: 'All' },
   ...applicantStatuses.map(status => ({ value: status, label: applicantStatusLabel(status) })),
 ])
 const totalPages = computed(() => Math.max(1, Math.ceil(total.value / pageSize)))
-const allowedStatusOptions = computed(() => selectedApplicant.value
-  ? [selectedApplicant.value.status, ...allowedApplicantStatusChanges(selectedApplicant.value.status)]
-  : [])
-
 async function loadApplicants(targetPage = 1) {
   const version = ++requestVersion
+  clearApplicantAvatars()
   page.value = targetPage
   loading.value = true
   error.value = ''
@@ -68,6 +59,7 @@ async function loadApplicants(targetPage = 1) {
     applicants.value = result.applications
     total.value = result.total
     page.value = result.page
+    void loadApplicantAvatars(result.applications, avatarRequestVersion)
   } catch (cause) {
     if (version === requestVersion) {
       error.value = cause instanceof Error ? cause.message : 'Unable to load applicants.'
@@ -75,6 +67,34 @@ async function loadApplicants(targetPage = 1) {
   } finally {
     if (version === requestVersion) loading.value = false
   }
+}
+
+function clearApplicantAvatars() {
+  avatarRequestVersion++
+  for (const url of avatarObjectUrls.values()) URL.revokeObjectURL(url)
+  avatarObjectUrls.clear()
+  applicantAvatarUrls.value = {}
+}
+
+async function loadApplicantAvatars(items: CompanyApplicantListItem[], version: number) {
+  const candidatesWithPhotos = items.filter(applicant => applicant.candidate.profileImageUrl)
+  let next = 0
+  const workerCount = Math.min(4, candidatesWithPhotos.length)
+  await Promise.all(Array.from({ length: workerCount }, async () => {
+    while (version === avatarRequestVersion && next < candidatesWithPhotos.length) {
+      const applicant = candidatesWithPhotos[next++]
+      if (!applicant) return
+      try {
+        const blob = await downloadCompanyApplicantAvatar(applicant.id)
+        if (version !== avatarRequestVersion) return
+        const url = URL.createObjectURL(blob)
+        avatarObjectUrls.set(applicant.id, url)
+        applicantAvatarUrls.value = { ...applicantAvatarUrls.value, [applicant.id]: url }
+      } catch {
+        // Candidates without an accessible photo use their initials.
+      }
+    }
+  }))
 }
 
 async function loadReviewCount() {
@@ -94,76 +114,26 @@ function chooseFilter(label: ApplicantFilter) {
   void loadApplicants(1)
 }
 
-async function openApplicant(applicant: CompanyApplicantListItem) {
-  selectedId.value = applicant.id
-  selectedApplicant.value = null
-  detailError.value = ''
-  statusError.value = ''
-  statusMessage.value = ''
-  detailLoading.value = true
-  try {
-    selectedApplicant.value = await fetchCompanyApplicant(applicant.id)
-  } catch (cause) {
-    detailError.value = cause instanceof Error ? cause.message : 'Unable to load this application.'
-  } finally {
-    detailLoading.value = false
-  }
-}
-
-function closeApplicant() {
-  selectedId.value = ''
-  selectedApplicant.value = null
-  detailError.value = ''
-}
-
-async function changeStatus(event: Event) {
-  const status = (event.target as HTMLSelectElement).value as ApplicantStatus
-  if (!selectedApplicant.value || status === selectedApplicant.value.status || savingStatus.value) return
-  const previousStatus = selectedApplicant.value.status
-  statusError.value = ''
-  statusMessage.value = ''
-  savingStatus.value = true
-  try {
-    selectedApplicant.value = await saveCompanyApplicantStatus(selectedApplicant.value.id, status)
-    const wasNeedsReview = ['APPLIED', 'UNDER_REVIEW'].includes(previousStatus)
-    const isNeedsReview = ['APPLIED', 'UNDER_REVIEW'].includes(status)
-    if (wasNeedsReview !== isNeedsReview) {
-      reviewCount.value = Math.max(0, reviewCount.value + (isNeedsReview ? 1 : -1))
-    }
-    statusMessage.value = 'Application stage saved.'
-    await loadApplicants(page.value)
-  } catch (cause) {
-    statusError.value = cause instanceof Error ? cause.message : 'Unable to update the application stage.'
-  } finally {
-    savingStatus.value = false
-  }
-}
-
 function statusClass(status: ApplicantStatus) {
   return applicantStatusClass(status)
 }
 
-function handleEscape(event: KeyboardEvent) {
-  if (event.key === 'Escape' && selectedId.value) closeApplicant()
+function reviewApplicant(applicant: CompanyApplicantListItem) {
+  void router.push({ name: 'CompanyApplicantProfilePage', params: { id: applicant.id } })
 }
 
-watch(selectedId, id => {
-  document.body.style.overflow = id ? 'hidden' : ''
-})
 watch(() => props.search, () => {
   if (searchTimer) clearTimeout(searchTimer)
   searchTimer = setTimeout(() => void loadApplicants(1), 250)
 })
 onMounted(() => {
-  window.addEventListener('keydown', handleEscape)
   void loadApplicants(1)
   void loadReviewCount()
 })
 onBeforeUnmount(() => {
   requestVersion++
+  clearApplicantAvatars()
   if (searchTimer) clearTimeout(searchTimer)
-  document.body.style.overflow = ''
-  window.removeEventListener('keydown', handleEscape)
 })
 </script>
 
@@ -177,7 +147,7 @@ onBeforeUnmount(() => {
 
     <section class="candidate-directory" aria-labelledby="candidate-list-heading">
       <header class="directory-heading">
-        <div><h3 id="candidate-list-heading">Candidate list</h3><p>Open a candidate to review their complete profile.</p></div>
+        <div><h3 id="candidate-list-heading">Candidate list</h3><p>Open an application to review the submitted form and CV.</p></div>
         <span>{{ total }} application{{ total === 1 ? '' : 's' }}</span>
       </header>
 
@@ -205,16 +175,17 @@ onBeforeUnmount(() => {
         </div>
         <ul>
           <li v-for="applicant in applicants" :key="applicant.id">
-            <button type="button" class="candidate-row" :aria-label="`Review ${applicantName(applicant)}`" @click="openApplicant(applicant)">
+            <button type="button" class="candidate-row" :aria-label="`Review the application from ${applicantName(applicant)}`" @click="reviewApplicant(applicant)">
               <span class="candidate-cell">
-                <span class="candidate-avatar" :class="`avatar-${applicantAvatarColor(applicant.id)}`">{{ applicantInitials(applicant) }}</span>
+                <img v-if="applicantAvatarUrls[applicant.id]" class="candidate-avatar candidate-photo" :src="applicantAvatarUrls[applicant.id]" :alt="`${applicantName(applicant)}'s profile photo`" />
+                <span v-else class="candidate-avatar" :class="`avatar-${applicantAvatarColor(applicant.id)}`" aria-hidden="true">{{ applicantInitials(applicant) }}</span>
                 <span class="candidate-name"><strong>{{ applicantName(applicant) }}</strong><small>{{ applicant.candidate.headline || 'No headline provided' }}</small></span>
               </span>
               <span class="role-cell"><strong>{{ applicant.job.title }}</strong><small>{{ applicant.job.company }}</small></span>
               <span class="location-cell">{{ applicant.candidate.location || applicant.job.location || 'Not provided' }}</span>
               <span class="applied-cell">{{ relativeApplicationDate(applicant.appliedAt) }}</span>
               <span class="applicant-status" :class="statusClass(applicant.status)">{{ applicantStatusLabel(applicant.status) }}</span>
-              <span class="open-profile"><span>View profile</span><UiIcon name="chevron" :size="17" /></span>
+              <span class="open-profile"><span>Review application</span><UiIcon name="chevron" :size="17" /></span>
             </button>
           </li>
         </ul>
@@ -233,80 +204,6 @@ onBeforeUnmount(() => {
       </nav>
     </section>
 
-    <Teleport to="body">
-      <div v-if="selectedId" class="candidate-modal-backdrop" @mousedown.self="closeApplicant">
-        <section class="candidate-modal" role="dialog" aria-modal="true" aria-label="Candidate application details">
-          <header class="modal-toolbar">
-            <div><span>Candidate profile</span><small>Application details</small></div>
-            <button type="button" aria-label="Close candidate profile" @click="closeApplicant"><UiIcon name="close" :size="20" /></button>
-          </header>
-
-          <p v-if="detailLoading" class="applicant-feedback" role="status">Loading application details…</p>
-          <div v-else-if="detailError" class="applicant-feedback applicant-error" role="alert">{{ detailError }}</div>
-
-          <div v-else-if="selectedApplicant" class="modal-scroll">
-            <div class="candidate-identity">
-              <div class="identity-main">
-                <span class="candidate-avatar avatar-large" :class="`avatar-${applicantAvatarColor(selectedApplicant.id)}`">{{ applicantInitials(selectedApplicant) }}</span>
-                <div>
-                  <h3 :id="`candidate-name-${selectedApplicant.id}`">
-                    <RouterLink
-                      :to="{ name: 'CompanyApplicantProfilePage', params: { id: selectedApplicant.id } }"
-                      :aria-label="`Open ${applicantName(selectedApplicant)}'s full profile`"
-                      @click="closeApplicant"
-                    >
-                      {{ applicantName(selectedApplicant) }}
-                    </RouterLink>
-                  </h3>
-                  <p>{{ selectedApplicant.candidate.headline || 'Candidate profile' }}</p>
-                </div>
-              </div>
-              <span class="applicant-status identity-status" :class="statusClass(selectedApplicant.status)">{{ applicantStatusLabel(selectedApplicant.status) }}</span>
-            </div>
-
-            <dl class="candidate-facts">
-              <div><dt>Applied for</dt><dd>{{ selectedApplicant.job.title }}</dd></div>
-              <div><dt>Location</dt><dd>{{ selectedApplicant.candidate.location || selectedApplicant.job.location || 'Not provided' }}</dd></div>
-              <div><dt>Applied</dt><dd>{{ relativeApplicationDate(selectedApplicant.appliedAt) }}</dd></div>
-              <div><dt>Email</dt><dd>{{ selectedApplicant.contact.email || 'Not shared' }}</dd></div>
-            </dl>
-
-            <div class="modal-content">
-              <div class="profile-main">
-                <section aria-labelledby="profile-note-heading">
-                  <h4 id="profile-note-heading">Profile note</h4>
-                  <p>{{ selectedApplicant.candidate.bio || 'The candidate has not added a profile summary.' }}</p>
-                </section>
-                <section aria-labelledby="application-context-heading">
-                  <h4 id="application-context-heading">Application context</h4>
-                  <p>{{ selectedApplicant.description || selectedApplicant.coverLetter || 'No introduction was included with this application.' }}</p>
-                </section>
-              </div>
-
-              <aside class="profile-aside">
-                <section aria-labelledby="candidate-skills-heading">
-                  <div class="section-title-row"><h4 id="candidate-skills-heading">Relevant skills</h4><span>{{ selectedCandidateSkills.length }}</span></div>
-                  <div class="skill-list"><span v-for="skill in selectedCandidateSkills" :key="skill">{{ skill }}</span><span v-if="!selectedCandidateSkills.length">No skills listed</span></div>
-                </section>
-                <label class="stage-control">
-                  <span>Application stage</span>
-                  <select :value="selectedApplicant.status" :disabled="savingStatus || allowedStatusOptions.length === 1" aria-label="Application stage" @change="changeStatus">
-                    <option v-for="status in allowedStatusOptions" :key="status" :value="status">{{ applicantStatusLabel(status) }}</option>
-                  </select>
-                </label>
-                <p v-if="statusError" class="status-feedback status-error" role="alert">{{ statusError }}</p>
-                <p v-else-if="statusMessage" class="status-feedback" role="status">{{ statusMessage }}</p>
-              </aside>
-            </div>
-          </div>
-
-          <footer v-if="selectedApplicant" class="modal-actions">
-            <p>   </p>
-            <button type="button" @click="closeApplicant">Done</button>
-          </footer>
-        </section>
-      </div>
-    </Teleport>
   </div>
 </template>
 
@@ -335,6 +232,7 @@ onBeforeUnmount(() => {
 .candidate-row:focus-visible { position: relative; z-index: 1; outline: 2px solid #7661e4; outline-offset: -2px; }
 .candidate-cell { display: flex; align-items: center; min-width: 0; gap: 12px; }
 .candidate-avatar { width: 42px; height: 42px; flex: 0 0 42px; border-radius: 10px; display: grid; place-items: center; font-size: 12px; font-weight: 700; }
+.candidate-photo { border: 1px solid #dce1eb; display: block; object-fit: cover; }
 .avatar-coral { background: #fff0f1; color: #9b5262; }
 .avatar-blue { background: #eaf1ff; color: #315eaa; }
 .avatar-purple { background: #f0edff; color: #604bd0; }
@@ -455,4 +353,63 @@ onBeforeUnmount(() => {
   .candidate-identity { flex-direction: column; gap: 14px; }
   .identity-status { display: inline-flex; margin-left: 69px; }
 }
+
+:global(.company-shell.theme-dark) .candidate-directory { background: var(--surface-raised); box-shadow: 0 8px 24px rgb(0 0 0 / 16%); }
+:global(.company-shell.theme-dark) .directory-heading > span,
+:global(.company-shell.theme-dark) .applicant-filters button,
+:global(.company-shell.theme-dark) .candidate-name small,
+:global(.company-shell.theme-dark) .role-cell small,
+:global(.company-shell.theme-dark) .location-cell,
+:global(.company-shell.theme-dark) .applied-cell,
+:global(.company-shell.theme-dark) .applicant-feedback,
+:global(.company-shell.theme-dark) .applicant-pagination { color: var(--muted); }
+:global(.company-shell.theme-dark) .directory-heading,
+:global(.company-shell.theme-dark) .applicant-filters,
+:global(.company-shell.theme-dark) .candidate-table li + li,
+:global(.company-shell.theme-dark) .applicant-pagination { border-color: var(--line); }
+:global(.company-shell.theme-dark) .applicant-filters button:hover,
+:global(.company-shell.theme-dark) .candidate-row:hover { background: var(--surface); color: var(--ink); }
+:global(.company-shell.theme-dark) .applicant-filters button.active { border-color: #554a82; background: var(--accent-soft); color: var(--accent-dark); }
+:global(.company-shell.theme-dark) .applicant-filters button span { background: #222b3a; color: var(--ink-soft); }
+:global(.company-shell.theme-dark) .table-heading { border-color: var(--line); background: var(--surface); color: var(--muted); }
+:global(.company-shell.theme-dark) .candidate-row { background: var(--surface-raised); }
+:global(.company-shell.theme-dark) .candidate-name strong,
+:global(.company-shell.theme-dark) .role-cell strong { color: var(--ink); }
+:global(.company-shell.theme-dark) .avatar-coral { background: #432a35; color: #f1a7b5; }
+:global(.company-shell.theme-dark) .avatar-blue { background: #263753; color: #9dc4ff; }
+:global(.company-shell.theme-dark) .avatar-purple { background: #302a4e; color: #c4b6ff; }
+:global(.company-shell.theme-dark) .avatar-orange { background: #473726; color: #f0bd7a; }
+:global(.company-shell.theme-dark) .status-new { border-color: #315a79; background: #1c3346; color: #91c7ee; }
+:global(.company-shell.theme-dark) .status-under-review { border-color: #3c506e; background: #222e43; color: #b6c7e6; }
+:global(.company-shell.theme-dark) .status-interview { border-color: #2d6459; background: #1d3b36; color: #9be0ce; }
+:global(.company-shell.theme-dark) .status-shortlisted { border-color: #51457e; background: #30294b; color: #c4b2ff; }
+:global(.company-shell.theme-dark) .status-offer-sent { border-color: #725d36; background: #3c3220; color: #e7c582; }
+:global(.company-shell.theme-dark) .status-hired { border-color: #366348; background: #21392b; color: #a9dfb9; }
+:global(.company-shell.theme-dark) .status-rejected { border-color: #713d49; background: #402730; color: #f0adb8; }
+:global(.company-shell.theme-dark) .status-withdrawn { border-color: #40495a; background: #272f3c; color: #b0bbce; }
+:global(.company-shell.theme-dark) .open-profile,
+:global(.company-shell.theme-dark) .candidate-empty button { color: var(--accent-dark); }
+:global(.company-shell.theme-dark) .applicant-feedback.applicant-error,
+:global(.company-shell.theme-dark) .applicant-error { color: #f0a5b2; }
+:global(.company-shell.theme-dark) .applicant-error button,
+:global(.company-shell.theme-dark) .applicant-pagination button { border-color: var(--line-strong); background: var(--surface); color: var(--accent-dark); }
+:global(.company-shell.theme-dark) .applicant-pagination button:disabled { color: #a0abc0; }
+:global(.company-shell.theme-dark) .candidate-table ul { background: var(--surface); }
+:global(.company-shell.theme-dark) .candidate-row { border-color: var(--line); }
+:global(.company-shell.theme-dark) .location-cell::before,
+:global(.company-shell.theme-dark) .applied-cell::before { color: var(--muted); }
+
+:global(.company-shell.theme-dark .applicants-page .directory-heading h3),
+:global(.company-shell.theme-dark .applicants-page .candidate-name strong),
+:global(.company-shell.theme-dark .applicants-page .role-cell strong) { color: #edf1f7 !important; }
+:global(.company-shell.theme-dark .applicants-page :is(.directory-heading p, .directory-heading > span, .applicant-filters button, .candidate-name small, .role-cell small, .location-cell, .applied-cell, .table-heading, .applicant-feedback, .applicant-pagination, .candidate-empty p)) { color: #b9c4d6 !important; }
+:global(.company-shell.theme-dark .applicants-page .candidate-directory),
+:global(.company-shell.theme-dark .applicants-page .candidate-row) { border-color: #2c3545; background-color: #1c2533; }
+:global(.company-shell.theme-dark .applicants-page .candidate-table li + li),
+:global(.company-shell.theme-dark .applicants-page .directory-heading),
+:global(.company-shell.theme-dark .applicants-page .applicant-filters),
+:global(.company-shell.theme-dark .applicants-page .applicant-pagination) { border-color: #2c3545; }
+:global(.company-shell.theme-dark .applicants-page .applicant-filters button.active) { border-color: #51478a; background: #2b2744; color: #cfc6ff !important; }
+:global(.company-shell.theme-dark .applicants-page .candidate-row:hover) { background: #171e2a; }
+:global(.company-shell.theme-dark .applicants-page .candidate-photo) { border-color: #455268; }
 </style>

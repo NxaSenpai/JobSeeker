@@ -23,6 +23,16 @@ export type Job = {
   responsibilities: string[]
   requirements: string[]
   salaryValue?: number | null
+  team?: string | null
+  industry?: string | null
+  benefits?: string[]
+  country?: string | null
+  city?: string | null
+  address?: string | null
+  experienceLevel?: string | null
+  minExperienceYears?: number | null
+  educationLevel?: string | null
+  vacancies?: number
   companyProfile?: Company | null
   isDemo?: boolean
   deadline?: string | null

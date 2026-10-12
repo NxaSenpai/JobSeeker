@@ -4,6 +4,10 @@ const apiBaseUrl = (
   import.meta.env.VITE_API_URL ?? 'http://localhost:3000/api/v1'
 ).replace(/\/$/, '')
 
+export function apiUrl(path: string) {
+  return `${apiBaseUrl}${path.startsWith('/') ? path : `/${path}`}`
+}
+
 export class ApiRequestError extends Error {
   status: number
 
@@ -22,7 +26,7 @@ export async function apiRequest<T>(path: string, options: RequestInit = {}): Pr
   if (session) {
     headers.set('Authorization', `Bearer ${session.accessToken}`)
   }
-  const response = await fetch(`${apiBaseUrl}${path}`, {
+  const response = await fetch(apiUrl(path), {
     ...options,
     headers,
   })
@@ -57,7 +61,7 @@ export async function apiBlob(path: string): Promise<Blob> {
     headers.set('Authorization', `Bearer ${session.accessToken}`)
   }
 
-  const response = await fetch(`${apiBaseUrl}${path}`, { headers })
+  const response = await fetch(apiUrl(path), { headers })
   if (!response.ok) {
     if (
       response.status === 401 &&

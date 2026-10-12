@@ -5,7 +5,7 @@ import slack from '@/assets/img/slack.png'
 import spotify from '@/assets/img/spotify.png'
 import telegram from '@/assets/img/telegram.png'
 import wordpress from '@/assets/img/wordpress.png'
-import { ApiRequestError, apiRequest } from './api'
+import { ApiRequestError, apiRequest, apiUrl } from './api'
 import type { Company, Job } from '@/data/catalog'
 
 export type PublicCompanyRecord = {
@@ -29,6 +29,10 @@ export type PublicJobRecord = {
   company: string
   companyProfile: PublicCompanyRecord | null
   location: string
+  team?: string | null
+  country?: string | null
+  city?: string | null
+  address?: string | null
   category: string | null
   industry: string | null
   jobType: string
@@ -42,6 +46,11 @@ export type PublicJobRecord = {
   salaryMax: number | null
   currency: string
   salaryPeriod: string
+  experienceLevel?: string | null
+  minExperienceYears?: number | null
+  educationLevel?: string | null
+  vacancies?: number
+  benefits?: string[]
   postedAt: string | null
   isDemo: boolean
   deadline: string | null
@@ -82,7 +91,15 @@ const accentColors = ['#f1efff', '#e9f8ee', '#f8eff7', '#eef6fb', '#eef8ff', '#f
 
 function companyLogo(name: string, logoUrl?: string | null) {
   if (isSafeHttpsUrl(logoUrl)) return logoUrl
+  if (isManagedLogoUrl(logoUrl)) return apiUrl(logoUrl)
   return logoByCompany[name.trim().toLowerCase()] ?? ''
+}
+
+function isManagedLogoUrl(value: string | null | undefined): value is string {
+  return Boolean(
+    value &&
+      /^\/companies\/[\da-f-]{36}\/logo\?v=[\da-f-]{36}\.jpg$/i.test(value),
+  )
 }
 
 function isSafeHttpsUrl(value: string | null | undefined): value is string {
@@ -208,6 +225,16 @@ export function mapPublicJob(record: PublicJobRecord): Job {
     description: record.description || 'The employer has not added a detailed description yet.',
     responsibilities: Array.isArray(record.responsibilities) ? record.responsibilities : [],
     requirements: Array.isArray(record.requirements) ? record.requirements : [],
+    benefits: Array.isArray(record.benefits) ? record.benefits : [],
+    team: record.team,
+    industry: record.industry,
+    country: record.country,
+    city: record.city,
+    address: record.address,
+    experienceLevel: record.experienceLevel,
+    minExperienceYears: record.minExperienceYears,
+    educationLevel: record.educationLevel,
+    vacancies: record.vacancies,
     companyProfile: record.companyProfile ? mapPublicCompany(record.companyProfile) : null,
     isDemo: record.isDemo,
     deadline: record.deadline,

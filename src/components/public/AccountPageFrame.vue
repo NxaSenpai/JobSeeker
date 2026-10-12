@@ -12,11 +12,6 @@ const tabs = [
   <section class="account-page">
     <h1>{{ title }}</h1>
     <p class="account-description mb-5">{{ description }}</p>
-    <nav class="account-tabs" aria-label="Your account pages">
-      <router-link v-for="tab in tabs" :key="tab.to" :to="tab.to">{{
-        tab.label
-      }}</router-link>
-    </nav>
     <slot />
   </section>
 </template>
@@ -173,6 +168,7 @@ const tabs = [
 .account-field {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
+  align-content: start;
   gap: 8px;
   color: #314178;
   font-size: 14px;

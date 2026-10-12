@@ -207,7 +207,6 @@ function changePage(page: number) {
       </aside>
 
       <div>
-        <div v-if="activeCategory" class="mb-5 flex items-center justify-between gap-4 rounded-lg bg-[#f3f0ff] px-4 py-3 text-sm text-[#5845ba]"><span>Showing {{ activeCategory }} roles</span><button type="button" class="cursor-pointer font-semibold hover:underline" @click="clearCategory">Clear category</button></div>
         <div class="flex flex-col gap-3 border-b border-[#e9e6f2] pb-5 sm:flex-row sm:items-center sm:justify-between">
           <p class="text-sm text-[#5d6b97]"><span class="font-semibold text-[#0b2b82]">{{ totalJobs }} jobs</span> matching your search</p>
           <label class="flex items-center gap-3 text-sm text-[#61709b]">Sort by <select v-model="sort" class="rounded-lg border border-[#e3dff1] bg-white px-3 py-2 text-sm font-medium text-[#36457e] outline-none" @change="applyFilters"><option>Newest</option><option>Salary high to low</option><option>Salary low to high</option></select></label>

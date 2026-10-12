@@ -48,9 +48,81 @@ export function readCompanySettings(user?: AuthUser | null): CompanySettings {
   }
 }
 
+export function readLegacyCompanyProfile(): Partial<CompanySettings> | null {
+  try {
+    const saved = localStorage.getItem(settingsKey)
+    if (!saved) return null
+    const parsed = JSON.parse(saved) as Partial<CompanySettings>
+    const profileKeys = [
+      'companyName',
+      'industry',
+      'companySize',
+      'founded',
+      'website',
+      'location',
+      'description',
+      'contactEmail',
+      'contactName',
+    ] as const
+    if (!profileKeys.some(key => typeof parsed[key] === 'string' && parsed[key]!.trim())) return null
+    const legacy: Partial<CompanySettings> = {}
+    for (const key of [
+      'companyName',
+      'industry',
+      'companySize',
+      'founded',
+      'website',
+      'location',
+      'description',
+      'contactEmail',
+      'contactName',
+      'timezone',
+    ] as const) {
+      if (typeof parsed[key] === 'string' && parsed[key]!.trim()) {
+        legacy[key] = parsed[key]
+      }
+    }
+    return Object.keys(legacy).length ? legacy : null
+  } catch {
+    return null
+  }
+}
+
+export function clearLegacyCompanyProfile() {
+  try {
+    const saved = localStorage.getItem(settingsKey)
+    if (!saved) return
+    const parsed = JSON.parse(saved) as Partial<CompanySettings>
+    for (const key of [
+      'companyName',
+      'industry',
+      'companySize',
+      'founded',
+      'website',
+      'location',
+      'description',
+      'contactEmail',
+      'contactName',
+    ] as const) {
+      delete parsed[key]
+    }
+    localStorage.setItem(settingsKey, JSON.stringify(parsed))
+  } catch {
+    // The API remains the source of truth if old browser storage is unavailable.
+  }
+}
+
 export function saveCompanySettings(settings: CompanySettings) {
   try {
-    localStorage.setItem(settingsKey, JSON.stringify(settings))
+    // Only workspace preferences remain local. Company profile fields are
+    // stored by the company profile API.
+    localStorage.setItem(settingsKey, JSON.stringify({
+      timezone: settings.timezone,
+      darkMode: settings.darkMode,
+      emailNewApplicant: settings.emailNewApplicant,
+      emailInterviewReminder: settings.emailInterviewReminder,
+      weeklySummary: settings.weeklySummary,
+    }))
     return true
   } catch {
     return false

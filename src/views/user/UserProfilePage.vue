@@ -19,6 +19,9 @@ const resumesLoading = ref(true)
 const resumeUploading = ref(false)
 const resumeError = ref('')
 const resumeSuccess = ref('')
+const resumePendingDeletion = ref<ResumeRecord | null>(null)
+const resumeDeleteBusy = ref(false)
+const resumeDeleteError = ref('')
 const previewUrl = ref('')
 const previewFileName = ref('')
 const skills = ref<string[]>([])
@@ -177,11 +180,34 @@ async function makeDefault(resume: ResumeRecord) {
   catch (cause) { resumeError.value = cause instanceof Error ? cause.message : 'Unable to update your default résumé.' }
 }
 
-async function removeResume(resume: ResumeRecord) {
-  if (!window.confirm(`Delete ${resume.fileName}?`)) return
+function requestResumeDelete(resume: ResumeRecord) {
+  resumeDeleteError.value = ''
+  resumePendingDeletion.value = resume
+}
+
+function cancelResumeDelete() {
+  if (resumeDeleteBusy.value) return
+  resumePendingDeletion.value = null
+  resumeDeleteError.value = ''
+}
+
+async function confirmResumeDelete() {
+  const resume = resumePendingDeletion.value
+  if (!resume || resumeDeleteBusy.value) return
+  resumeDeleteBusy.value = true
+  resumeDeleteError.value = ''
   resumeError.value = ''; resumeSuccess.value = ''
-  try { await apiRequest(`/account/resumes/${resume.id}`, { method: 'DELETE' }); resumes.value = resumes.value.filter(item => item.id !== resume.id); if (resume.isDefault && resumes.value[0]) resumes.value[0].isDefault = true; resumeSuccess.value = 'Résumé deleted.' }
-  catch (cause) { resumeError.value = cause instanceof Error ? cause.message : 'Unable to delete your résumé.' }
+  try {
+    await apiRequest(`/account/resumes/${resume.id}`, { method: 'DELETE' })
+    resumes.value = resumes.value.filter(item => item.id !== resume.id)
+    if (resume.isDefault && resumes.value[0]) resumes.value[0].isDefault = true
+    resumeSuccess.value = 'Résumé deleted.'
+    resumePendingDeletion.value = null
+  } catch (cause) {
+    resumeDeleteError.value = cause instanceof Error ? cause.message : 'Unable to delete your résumé.'
+  } finally {
+    resumeDeleteBusy.value = false
+  }
 }
 
 function fileSize(value: number) { return value < 1024 * 1024 ? `${Math.max(1, Math.round(value / 1024))} KB` : `${(value / 1024 / 1024).toFixed(1)} MB` }
@@ -255,7 +281,7 @@ onBeforeUnmount(() => { closePreview(); if (avatarUrl.value) URL.revokeObjectURL
             <header class="card-heading resume-heading"><div><h2 id="resume-heading">Your résumés</h2><p>Choose the PDF used for direct job applications.</p></div><label class="primary-button upload-button" :class="{ disabled: resumeUploading }">{{ resumeUploading ? 'Uploading…' : 'Upload PDF' }}<input type="file" accept="application/pdf,.pdf" :disabled="resumeUploading" @change="uploadResume" /></label></header>
             <p v-if="resumeSuccess" class="feedback success-feedback" role="status">{{ resumeSuccess }}</p><p v-if="resumeError" class="feedback error-feedback" role="alert">{{ resumeError }}</p>
             <p v-if="resumesLoading" class="resume-empty">Loading your résumés…</p>
-            <div v-else-if="resumes.length" class="resume-list"><article v-for="resume in resumes" :key="resume.id" class="resume-row"><span class="pdf-icon" aria-hidden="true">PDF</span><div class="resume-copy"><strong>{{ resume.fileName }}</strong><span>{{ fileSize(resume.fileSize) }}<b v-if="resume.isDefault">Default</b></span></div><div class="resume-actions"><button type="button" @click="previewResume(resume)">Preview</button><button type="button" @click="downloadResume(resume)">Download</button><button v-if="!resume.isDefault" type="button" @click="makeDefault(resume)">Set default</button><button type="button" class="danger-action" @click="removeResume(resume)">Delete</button></div></article></div>
+            <div v-else-if="resumes.length" class="resume-list"><article v-for="resume in resumes" :key="resume.id" class="resume-row"><span class="pdf-icon" aria-hidden="true">PDF</span><div class="resume-copy"><strong>{{ resume.fileName }}</strong><span>{{ fileSize(resume.fileSize) }}<b v-if="resume.isDefault">Default</b></span></div><div class="resume-actions"><button type="button" @click="previewResume(resume)">Preview</button><button type="button" @click="downloadResume(resume)">Download</button><button v-if="!resume.isDefault" type="button" @click="makeDefault(resume)">Set default</button><button type="button" class="danger-action" @click="requestResumeDelete(resume)">Delete</button></div></article></div>
             <label v-else class="resume-dropzone">Keep your CV ready for your next opportunity. <span>Browse for a PDF</span><input type="file" accept="application/pdf,.pdf" :disabled="resumeUploading" @change="uploadResume" /></label>
           </section>
         </div>
@@ -279,6 +305,19 @@ onBeforeUnmount(() => { closePreview(); if (avatarUrl.value) URL.revokeObjectURL
     </div>
     <div v-else class="profile-loading" role="status">Loading your profile…</div>
     <div v-if="previewUrl" class="preview-backdrop" role="dialog" aria-modal="true" :aria-label="`Preview ${previewFileName}`" @click.self="closePreview"><section class="preview-panel"><header><strong>{{ previewFileName }}</strong><button type="button" aria-label="Close résumé preview" @click="closePreview">×</button></header><iframe :src="previewUrl" :title="`Preview ${previewFileName}`"></iframe></section></div>
+    <div v-if="resumePendingDeletion" class="resume-confirm-backdrop" @click.self="cancelResumeDelete">
+      <section class="resume-confirm-dialog" role="alertdialog" aria-modal="true" aria-labelledby="resume-confirm-title" aria-describedby="resume-confirm-description" @keydown.esc.prevent="cancelResumeDelete">
+        <div class="resume-confirm-icon" aria-hidden="true">!</div>
+        <p class="resume-confirm-eyebrow">Delete résumé</p>
+        <h2 id="resume-confirm-title">Are you sure?</h2>
+        <p id="resume-confirm-description">“{{ resumePendingDeletion.fileName }}” will be permanently removed from your profile.</p>
+        <p v-if="resumeDeleteError" class="resume-confirm-error" role="alert">{{ resumeDeleteError }}</p>
+        <div class="resume-confirm-actions">
+          <button class="resume-confirm-no" type="button" autofocus :disabled="resumeDeleteBusy" @click="cancelResumeDelete">No, keep it</button>
+          <button class="resume-confirm-yes" type="button" :disabled="resumeDeleteBusy" @click="confirmResumeDelete">{{ resumeDeleteBusy ? 'Deleting…' : 'Yes, delete' }}</button>
+        </div>
+      </section>
+    </div>
   </main>
 </template>
 
@@ -328,6 +367,7 @@ onBeforeUnmount(() => { closePreview(); if (avatarUrl.value) URL.revokeObjectURL
 .edit-card { width: 100%; margin-top: 22px; }.edit-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-top: 20px; }.edit-fields label { display: grid; gap: 7px; color: #4f5978; font-size: 11px; font-weight: 700; }.edit-fields .wide-field { grid-column: 1 / -1; }.edit-fields input, .edit-fields textarea { width: 100%; padding: 11px 12px; border: 1px solid #ddd9e9; border-radius: 8px; color: #222b4a; font: inherit; font-size: 12px; outline: 0; }.edit-fields textarea { resize: vertical; line-height: 1.6; }.edit-fields :is(input, textarea):focus { border-color: #7762e6; box-shadow: 0 0 0 3px #6a50dd14; }.edit-fields small { justify-self: end; color: #8a91a7; font-size: 9px; }.edit-actions { display: flex; justify-content: flex-end; gap: 9px; margin-top: 18px; padding-top: 16px; border-top: 1px solid #ece9f3; }.secondary-button { min-height: 37px; padding: 0 14px; border: 1px solid #ddd8ec; border-radius: 8px; background: #fff; color: #4a5472; font-size: 12px; font-weight: 700; cursor: pointer; }
 .feedback { margin: 12px 0 0; padding: 10px 12px; border-radius: 8px; font-size: 11px; }.success-feedback { background: #edf8f1; color: #367254; }.error-feedback { background: #fff0f1; color: #a03f53; }.profile-loading { display: grid; min-height: 420px; place-items: center; color: #6f7892; }
 .preview-backdrop { position: fixed; z-index: 100; inset: 0; display: grid; place-items: center; padding: 24px; background: #10162db8; }.preview-panel { width: min(960px, 100%); height: min(780px, 90vh); overflow: hidden; border-radius: 14px; background: #fff; }.preview-panel header { display: flex; align-items: center; justify-content: space-between; height: 54px; padding: 0 17px; border-bottom: 1px solid #e6e3ed; color: #232c4a; font-size: 12px; }.preview-panel header button { border: 0; background: transparent; color: #5d6680; font-size: 24px; cursor: pointer; }.preview-panel iframe { width: 100%; height: calc(100% - 54px); border: 0; }.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; }
+.resume-confirm-backdrop { position: fixed; z-index: 110; inset: 0; display: grid; place-items: center; padding: 20px; background: #10162d99; backdrop-filter: blur(3px); }.resume-confirm-dialog { width: min(430px, 100%); padding: 26px; border: 1px solid #ebe8f3; border-radius: 15px; background: #fff; box-shadow: 0 22px 60px #10162d40; color: #232c4a; }.resume-confirm-icon { width: 38px; height: 38px; margin-bottom: 15px; border: 1px solid #f0cbd1; border-radius: 11px; display: grid; place-items: center; background: #fff3f4; color: #a03f53; font-size: 21px; font-weight: 700; }.resume-confirm-eyebrow { margin: 0 0 6px; color: #a03f53; font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }.resume-confirm-dialog h2 { margin: 0; color: #232c4a; font-size: 21px; letter-spacing: -.02em; }.resume-confirm-dialog > p:not(.resume-confirm-eyebrow):not(.resume-confirm-error) { margin: 11px 0 0; color: #616b84; font-size: 13px; line-height: 1.6; overflow-wrap: anywhere; }.resume-confirm-error { margin: 13px 0 0; padding: 9px 11px; border: 1px solid #f0cbd1; border-radius: 7px; background: #fff5f6; color: #9b3348; font-size: 12px; line-height: 1.5; }.resume-confirm-actions { margin-top: 22px; display: flex; justify-content: flex-end; gap: 9px; }.resume-confirm-actions button { min-height: 38px; padding: 0 14px; border: 1px solid #ded9ea; border-radius: 8px; background: #fff; color: #4a5472; font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; }.resume-confirm-actions button:disabled { opacity: .55; cursor: wait; }.resume-confirm-yes { border-color: #a63d52 !important; background: #a63d52 !important; color: #fff !important; }
 @media (max-width: 900px) { .identity-row { align-items: flex-start; }.profile-layout { grid-template-columns: 1fr; }.overview-actions { min-width: 190px; }.side-column { grid-template-columns: repeat(2, 1fr); }.skills-card { grid-column: 1 / -1; } }
 @media (max-width: 680px) { .profile-page { padding: 18px 14px 60px; }.identity-row { display: grid; padding: 21px; }.identity-main { align-items: flex-start; }.profile-avatar { width: 70px; height: 70px; font-size: 21px; }.name-row h1 { font-size: 26px; }.headline { font-size: 14px; }.overview-actions { width: 100%; grid-template-columns: 1fr; }.profile-shortcuts { grid-template-columns: 1fr 1fr; margin: 0 14px 14px; }.profile-shortcuts > *:nth-child(3) { border-left: 0; border-top: 1px solid #dfdced; }.profile-shortcuts > *:nth-child(4) { border-top: 1px solid #dfdced; }.profile-card { padding: 18px; }.search-links, .side-column, .edit-fields { grid-template-columns: 1fr; }.edit-fields .wide-field { grid-column: auto; }.resume-row { grid-template-columns: 42px minmax(0, 1fr); }.resume-actions { grid-column: 1 / -1; justify-content: flex-start; padding-top: 8px; border-top: 1px solid #e4e0ef; } }
 @media (max-width: 430px) { .identity-main { display: grid; }.overview-actions { grid-template-columns: 1fr; }.profile-shortcuts > * { padding: 13px; }.resume-heading { align-items: flex-start; flex-direction: column; }.empty-state { align-items: flex-start; flex-direction: column; } }

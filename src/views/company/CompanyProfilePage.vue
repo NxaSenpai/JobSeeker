@@ -1,23 +1,166 @@
 <script setup lang="ts">
-import { computed, reactive, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import verifyLogo from '@/assets/img/verify_logo.png'
 import CompanyPageHeader from '@/components/company/CompanyPageHeader.vue'
-import { displayNameForUser, getAuthSession, initialsForUser } from '@/services/auth'
-import { companyJobs } from '@/services/companyJobs'
-import { readCompanySettings, saveCompanySettings, type CompanySettings } from '@/services/companySettings'
+import { apiBlob, ApiRequestError } from '@/services/api'
+import { displayNameForUser, getAuthSession, initialsForUser, updateAuthUser } from '@/services/auth'
+import { companyJobs, loadCompanyJobs } from '@/services/companyJobs'
+import {
+  clearLegacyCompanyProfile,
+  readCompanySettings,
+  readLegacyCompanyProfile,
+  type CompanySettings,
+} from '@/services/companySettings'
+import {
+  loadCompanyProfile,
+  removeCompanyLogo,
+  updateCompanyProfile,
+  uploadCompanyLogo,
+  type CompanyProfileInput,
+  type CompanyProfileRecord,
+} from '@/services/companyProfile'
 
 const user = getAuthSession()?.user
 const settings = reactive<CompanySettings>(readCompanySettings(user))
 const draft = reactive<CompanySettings>({ ...settings })
+const companyProfile = ref<CompanyProfileRecord | null>(null)
+const logoPreviewUrl = ref('')
 const editing = ref(false)
+const saving = ref(false)
+const logoUploading = ref(false)
+const logoRemoving = ref(false)
+const profileLoading = ref(true)
 const saveError = ref('')
 const saveSuccess = ref('')
+let logoObjectUrl = ''
 
 const companyName = computed(() => settings.companyName.trim() || (user ? displayNameForUser(user) : 'Your company'))
 const companyInitials = computed(() => settings.companyName.trim()
   ? settings.companyName.split(/\s+/).slice(0, 2).map(word => word[0]).join('').toUpperCase()
   : user ? initialsForUser(user) : 'CO')
-const hiringTeams = computed(() => [...new Set(companyJobs.value.filter(job => job.status === 'Published').map(job => job.team))].slice(0, 6))
+const hiringTeams = computed(() => [...new Set(companyJobs.value
+  .filter(job => job.status === 'Published' && job.team.trim())
+  .map(job => job.team.trim()))].slice(0, 6))
+
+function applyProfile(company: CompanyProfileRecord) {
+  companyProfile.value = company
+  settings.companyName = company.name || ''
+  settings.industry = company.industry || ''
+  settings.companySize = company.companySize || ''
+  settings.founded = company.foundedYear ? String(company.foundedYear) : ''
+  settings.website = company.website || ''
+  settings.location = company.location || ''
+  settings.description = company.description || ''
+  settings.contactEmail = company.contactEmail || ''
+  settings.contactName = company.contactName || ''
+  settings.timezone = company.timezone || 'Asia/Phnom_Penh'
+  Object.assign(draft, settings)
+}
+
+function legacyProfileBelongsToCompany(
+  company: CompanyProfileRecord,
+  legacy: Partial<CompanySettings> | null = readLegacyCompanyProfile(),
+) {
+  if (!legacy) return false
+  return (
+    Boolean(user?.email && legacy.contactEmail?.toLowerCase() === user.email.toLowerCase()) ||
+    Boolean(legacy.companyName && [company.name, user?.companyName].includes(legacy.companyName))
+  )
+}
+
+function legacyProfileInput(
+  company: CompanyProfileRecord,
+  legacy: Partial<CompanySettings> | null = readLegacyCompanyProfile(),
+): CompanyProfileInput {
+  if (!legacyProfileBelongsToCompany(company, legacy) || !legacy) return {}
+  const input: CompanyProfileInput = {}
+  const profileIsOtherwiseBlank = !company.industry && !company.companySize &&
+    !company.foundedYear && !company.location && !company.website &&
+    !company.description && !company.contactEmail
+
+  if (legacy.companyName?.trim() && profileIsOtherwiseBlank &&
+      (company.name === user?.companyName || company.name === 'Company')) {
+    input.name = legacy.companyName.trim()
+  }
+  if (!company.industry && legacy.industry) input.industry = legacy.industry.trim()
+  if (!company.companySize && legacy.companySize) input.companySize = legacy.companySize.trim()
+  if (!company.foundedYear && legacy.founded) {
+    const year = Number(legacy.founded)
+    if (Number.isInteger(year) && year >= 1800 && year <= new Date().getFullYear()) input.foundedYear = year
+  }
+  if (!company.location && legacy.location) input.location = legacy.location.trim()
+  if (!company.website && legacy.website) {
+    try {
+      const url = new URL(legacy.website)
+      if (url.protocol === 'https:' && !url.username && !url.password) input.website = url.toString()
+    } catch { /* Skip invalid legacy URLs and keep the saved profile usable. */ }
+  }
+  if (!company.description && legacy.description) input.description = legacy.description.trim()
+  if (!company.contactName && legacy.contactName) input.contactName = legacy.contactName.trim()
+  if (!company.contactEmail && legacy.contactEmail &&
+      legacy.contactEmail.toLowerCase() !== user?.email.toLowerCase() &&
+      /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(legacy.contactEmail)) {
+    input.contactEmail = legacy.contactEmail.trim()
+  }
+  if (!company.timezone && legacy.timezone) input.timezone = legacy.timezone.trim()
+  return input
+}
+
+function discardLogoObjectUrl() {
+  if (logoObjectUrl) URL.revokeObjectURL(logoObjectUrl)
+  logoObjectUrl = ''
+  logoPreviewUrl.value = ''
+}
+
+async function refreshLogoPreview() {
+  discardLogoObjectUrl()
+  const logoUrl = companyProfile.value?.logoUrl
+  if (!logoUrl) return
+  if (/^https:\/\//i.test(logoUrl)) {
+    logoPreviewUrl.value = logoUrl
+    return
+  }
+  try {
+    const blob = await apiBlob('/company/profile/logo')
+    logoObjectUrl = URL.createObjectURL(blob)
+    logoPreviewUrl.value = logoObjectUrl
+  } catch {
+    // A missing photo is a normal first-time profile state.
+  }
+}
+
+async function loadProfile() {
+  profileLoading.value = true
+  try {
+    let { company } = await loadCompanyProfile()
+    applyProfile(company)
+    const legacy = readLegacyCompanyProfile()
+    if (legacyProfileBelongsToCompany(company, legacy)) {
+      const legacyInput = legacyProfileInput(company, legacy)
+      if (Object.keys(legacyInput).length) {
+        const migrated = await updateCompanyProfile(legacyInput)
+        company = migrated.company
+        applyProfile(company)
+      }
+      clearLegacyCompanyProfile()
+    }
+    if (user && (company.name !== user.companyName || company.contactName !== user.contactName)) {
+      updateAuthUser({ ...user, companyName: company.name, contactName: company.contactName })
+    }
+    await refreshLogoPreview()
+  } catch (cause) {
+    saveError.value = cause instanceof Error ? cause.message : 'Company profile could not be loaded.'
+  } finally {
+    profileLoading.value = false
+  }
+}
+
+onMounted(() => {
+  void loadProfile()
+  void loadCompanyJobs().catch(() => undefined)
+})
+
+onBeforeUnmount(discardLogoObjectUrl)
 
 function startEditing() {
   Object.assign(draft, settings)
@@ -32,16 +175,91 @@ function cancelEditing() {
   editing.value = false
 }
 
-function saveProfile() {
+async function saveProfile() {
   saveError.value = ''
-  const next = { ...settings, ...draft }
-  if (!saveCompanySettings(next)) {
-    saveError.value = 'The company profile could not be saved in this browser.'
+  saveSuccess.value = ''
+  saving.value = true
+  const foundedText = draft.founded.trim()
+  const foundedYear = foundedText ? Number(foundedText) : null
+  if (foundedText && (!/^\d{4}$/.test(foundedText) || foundedYear === null ||
+      !Number.isInteger(foundedYear) || foundedYear < 1800 ||
+      foundedYear > new Date().getFullYear())) {
+    saveError.value = 'Enter a founded year between 1800 and the current year.'
+    saving.value = false
     return
   }
-  Object.assign(settings, next)
-  editing.value = false
-  saveSuccess.value = 'Company profile updated.'
+  const input: CompanyProfileInput = {
+    contactName: draft.contactName.trim(),
+    name: draft.companyName.trim(),
+    industry: draft.industry.trim(),
+    companySize: draft.companySize.trim(),
+    foundedYear,
+    website: draft.website.trim(),
+    location: draft.location.trim(),
+    description: draft.description.trim(),
+    contactEmail: draft.contactEmail.trim(),
+    timezone: draft.timezone,
+  }
+  try {
+    const result = await updateCompanyProfile(input)
+    applyProfile(result.company)
+    if (user) updateAuthUser({
+      ...user,
+      companyName: result.company.name,
+      contactName: result.company.contactName,
+    })
+    if (companyProfile.value && legacyProfileBelongsToCompany(companyProfile.value)) clearLegacyCompanyProfile()
+    editing.value = false
+    saveSuccess.value = 'Company profile saved.'
+  } catch (cause) {
+    saveError.value = cause instanceof ApiRequestError || cause instanceof Error
+      ? cause.message
+      : 'The company profile could not be saved.'
+  } finally {
+    saving.value = false
+  }
+}
+
+async function changeLogo(event: Event) {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  input.value = ''
+  if (!file) return
+  saveError.value = ''
+  saveSuccess.value = ''
+  if (file.size > 5 * 1024 * 1024 || !['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
+    saveError.value = 'Choose a JPG, PNG, or WebP logo up to 5 MB.'
+    return
+  }
+  logoUploading.value = true
+  try {
+    const result = await uploadCompanyLogo(file)
+    companyProfile.value = result.company
+    await refreshLogoPreview()
+    window.dispatchEvent(new Event('company-logo-updated'))
+    saveSuccess.value = 'Company photo updated.'
+  } catch (cause) {
+    saveError.value = cause instanceof Error ? cause.message : 'Company photo could not be uploaded.'
+  } finally {
+    logoUploading.value = false
+  }
+}
+
+async function deleteLogo() {
+  saveError.value = ''
+  saveSuccess.value = ''
+  logoRemoving.value = true
+  try {
+    await removeCompanyLogo()
+    if (companyProfile.value) companyProfile.value.logoUrl = null
+    discardLogoObjectUrl()
+    window.dispatchEvent(new Event('company-logo-updated'))
+    saveSuccess.value = 'Company photo removed.'
+  } catch (cause) {
+    saveError.value = cause instanceof Error ? cause.message : 'Company photo could not be removed.'
+  } finally {
+    logoRemoving.value = false
+  }
 }
 </script>
 
@@ -57,14 +275,25 @@ function saveProfile() {
       <div class="identity-row">
         <div class="identity-main">
           <div class="logo-wrap">
-            <div class="company-logo" aria-hidden="true">{{ companyInitials }}</div>
-            <img :src="verifyLogo" class="verification-mark" alt="Verified company" />
+            <img v-if="logoPreviewUrl" :src="logoPreviewUrl" class="company-logo company-logo-photo" :alt="companyName + ' logo'" />
+            <div v-else class="company-logo" aria-hidden="true">{{ companyInitials }}</div>
+            <img v-if="companyProfile?.isVerified" :src="verifyLogo" class="verification-mark" alt="Verified company" />
+          </div>
+          <div class="logo-actions">
+            <label class="logo-upload-button" :class="{ disabled: logoUploading }">
+              {{ logoUploading ? 'Uploading…' : 'Change photo' }}
+              <input type="file" accept="image/jpeg,image/png,image/webp" :disabled="logoUploading" @change="changeLogo" />
+            </label>
+            <button v-if="companyProfile?.logoUrl" type="button" class="logo-remove-button" :disabled="logoRemoving" @click="deleteLogo">
+              {{ logoRemoving ? 'Removing…' : 'Remove photo' }}
+            </button>
+            <small>JPG, PNG, or WebP · up to 5 MB</small>
           </div>
           <div class="identity-copy">
             <h2 id="company-profile-name">{{ companyName }}</h2>
             <p>{{ settings.industry || 'Add your company industry' }}</p>
             <div class="identity-meta">
-              <span><b aria-hidden="true">@</b>{{ settings.contactEmail || user?.email }}</span>
+              <span><b aria-hidden="true">@</b>{{ settings.contactEmail || 'Public email not added' }}</span>
               <span><b aria-hidden="true">⌖</b>{{ settings.location || 'Location not added' }}</span>
               <span v-if="settings.website"><b aria-hidden="true">↗</b>{{ settings.website.replace(/^https?:\/\//, '') }}</span>
             </div>
@@ -83,7 +312,9 @@ function saveProfile() {
       </div>
     </section>
 
+    <p v-if="profileLoading" class="save-message" role="status">Loading company profile…</p>
     <p v-if="saveSuccess" class="save-message" role="status">{{ saveSuccess }}</p>
+    <p v-if="saveError" class="error-message" role="alert">{{ saveError }}</p>
 
     <form v-if="editing" class="profile-card profile-edit-form" @submit.prevent="saveProfile">
       <header class="form-heading">
@@ -121,15 +352,15 @@ function saveProfile() {
         <div class="field-grid">
           <label>Website<input v-model="draft.website" type="url" placeholder="https://company.com" autocomplete="url" /></label>
           <label>Location<input v-model="draft.location" maxlength="100" placeholder="City, country" autocomplete="address-level2" /></label>
+          <label>Primary contact<input v-model="draft.contactName" maxlength="100" autocomplete="name" placeholder="Hiring contact" /></label>
           <label>Public contact email<input v-model="draft.contactEmail" type="email" autocomplete="email" /></label>
           <label>Time zone
-            <select v-model="draft.timezone"><option value="Asia/Phnom_Penh">Phnom Penh (UTC+7)</option><option value="Asia/Bangkok">Bangkok (UTC+7)</option><option value="Asia/Singapore">Singapore (UTC+8)</option><option value="UTC">UTC</option></select>
+            <select v-model="draft.timezone"><option value="Asia/Phnom_Penh">Phnom Penh (UTC+7)</option><option value="Asia/Singapore">Singapore (UTC+8)</option><option value="UTC">UTC</option></select>
           </label>
         </div>
       </section>
 
-      <p v-if="saveError" class="error-message" role="alert">{{ saveError }}</p>
-      <footer class="form-actions"><button type="button" class="secondary-button" @click="cancelEditing">Discard</button><button type="submit" class="save-button">Save profile</button></footer>
+      <footer class="form-actions"><button type="button" class="secondary-button" :disabled="saving" @click="cancelEditing">Discard</button><button type="submit" class="save-button" :disabled="saving">{{ saving ? 'Saving…' : 'Save profile' }}</button></footer>
     </form>
 
     <div v-else class="profile-layout">
@@ -148,7 +379,7 @@ function saveProfile() {
           <dl>
             <div><dt>Website</dt><dd>{{ settings.website || 'Not added' }}</dd></div>
             <div><dt>Location</dt><dd>{{ settings.location || 'Not added' }}</dd></div>
-            <div><dt>Public contact</dt><dd>{{ settings.contactEmail || user?.email }}</dd></div>
+            <div><dt>Public contact</dt><dd>{{ settings.contactEmail || 'Not added' }}</dd></div>
             <div><dt>Time zone</dt><dd>{{ settings.timezone }}</dd></div>
           </dl>
         </section>
@@ -176,6 +407,14 @@ function saveProfile() {
 .identity-main { display: flex; align-items: center; min-width: 0; gap: 19px; }
 .logo-wrap { position: relative; width: fit-content; flex: 0 0 auto; }
 .company-logo { display: grid; width: 92px; height: 92px; place-items: center; border: 1px solid #dcd6fb; border-radius: 20px; background: #eeebff; color: #4a31c7; font-size: 27px; font-weight: 700; }
+.company-logo-photo { padding: 5px; object-fit: contain; }
+.logo-actions { display: grid; justify-items: start; gap: 5px; }
+.logo-upload-button, .logo-remove-button { min-height: 31px; padding: 0 10px; border: 1px solid #dcd6fb; border-radius: 7px; display: inline-flex; align-items: center; background: #fff; color: #4930ce; font-size: 11px; font-weight: 700; cursor: pointer; }
+.logo-upload-button:hover, .logo-remove-button:hover { background: #f5f3ff; }
+.logo-upload-button input { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; clip-path: inset(50%); }
+.logo-upload-button:focus-within { outline: 3px solid rgb(123 102 255 / 24%); outline-offset: 2px; }
+.logo-upload-button.disabled, .logo-remove-button:disabled { opacity: .55; cursor: wait; }
+.logo-actions small { color: #858da5; font-size: 10px; white-space: nowrap; }
 .verification-mark { position: absolute; right: -4px; bottom: -3px; width: 20px; height: 20px; max-width: 20px; object-fit: contain; border: 2px solid #fff; border-radius: 50%; }
 .identity-copy { min-width: 0; }
 .identity-copy h2 { margin: 0; color: #101938; font-size: clamp(30px, 3vw, 39px); font-weight: 700; letter-spacing: -.04em; }

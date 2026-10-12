@@ -9,7 +9,9 @@ import CompanySettingsPage from '@/views/company/CompanySettingsPage.vue'
 import CompanyHelpPage from '@/views/company/CompanyHelpPage.vue'
 import CompanyProfilePage from '@/views/company/CompanyProfilePage.vue'
 import UiIcon from '@/components/company/UiIcon.vue'
-import { clearAuthSession, displayNameForUser, getAuthSession, initialsForUser } from '@/services/auth'
+import { apiBlob } from '@/services/api'
+import { clearAuthSession, currentUser as authCurrentUser, displayNameForUser, initialsForUser } from '@/services/auth'
+import { loadCompanyProfile } from '@/services/companyProfile'
 import {
   applicantAvatarColor,
   applicantName,
@@ -22,14 +24,27 @@ import {
 import { relativeApplicationDate } from '@/services/companyWorkspace'
 import { companyJobs, companyJobsError, companyJobsLoading, loadCompanyJobs } from '@/services/companyJobs'
 import { companyDarkMode, syncCompanyDarkMode } from '@/services/companyTheme'
+import {
+  companyNotifications,
+  companyNotificationsError,
+  companyNotificationsLoading,
+  companyUnreadNotificationCount,
+  markAllCompanyNotificationsRead,
+  markCompanyNotificationRead,
+  refreshCompanyNotifications,
+  startCompanyNotificationRealtime,
+  stopCompanyNotificationRealtime,
+  type CompanyNotification,
+} from '@/services/companyNotificationRealtime'
 import { useSidebarDock } from '@/composables/useSidebarDock'
 
 const search = ref('')
 const searchInput = ref<HTMLInputElement | null>(null)
 const showNotifications = ref(false)
-const notificationsRead = ref(false)
 const showSidebarProfileMenu = ref(false)
 const sidebarCollapsed = useSidebarDock('jobseeker.sidebar.docked.company')
+const companyAvatarUrl = ref('')
+let companyAvatarObjectUrl = ''
 const mobileMenuOpen = ref(false)
 const route = useRoute()
 const router = useRouter()
@@ -38,10 +53,10 @@ const applicantTotal = ref(0)
 const applicantCounts = ref({ APPLIED: 0, UNDER_REVIEW: 0, INTERVIEW: 0, SHORTLISTED: 0 })
 const applicantSummaryLoading = ref(false)
 const applicantSummaryError = ref('')
-const currentUser = getAuthSession()?.user
-syncCompanyDarkMode(currentUser)
-const displayName = computed(() => currentUser ? displayNameForUser(currentUser) : 'Company account')
-const initials = computed(() => currentUser ? initialsForUser(currentUser) : 'CO')
+const currentUser = authCurrentUser
+syncCompanyDarkMode(currentUser.value)
+const displayName = computed(() => currentUser.value ? displayNameForUser(currentUser.value) : 'Company account')
+const initials = computed(() => currentUser.value ? initialsForUser(currentUser.value) : 'CO')
 
 const pageComponents = {
   CompanyJobsPage,
@@ -55,7 +70,7 @@ const pageTitles: Record<string, string> = {
   CompanyDashboardPage: 'Recruiting',
   CompanyJobsPage: 'Jobs',
   CompanyApplicantsPage: 'Applicants',
-  CompanyApplicantProfilePage: 'Candidate profile',
+  CompanyApplicantProfilePage: 'Application review',
   CompanySettingsPage: 'Company settings',
   CompanyHelpPage: 'Help & Support',
   CompanyProfilePage: 'Company profile',
@@ -71,7 +86,9 @@ const activeNav = computed(() => ({
 } as Record<string, string>)[String(route.name)] ?? 'Dashboard')
 const activePageComponent = computed(() => pageComponents[String(route.name) as keyof typeof pageComponents])
 const isDashboardPage = computed(() => route.name === 'CompanyDashboardPage')
-const pageTitle = computed(() => pageTitles[String(route.name)] ?? 'Recruiting')
+const pageTitle = computed(() => route.name === 'CompanyApplicantProfilePage' && route.query.view === 'profile'
+  ? 'Candidate profile'
+  : pageTitles[String(route.name)] ?? 'Recruiting')
 const searchEnabled = computed(() => ['CompanyDashboardPage', 'CompanyJobsPage', 'CompanyApplicantsPage'].includes(String(route.name)))
 
 async function loadApplicantSummary() {
@@ -107,7 +124,7 @@ function signOut() {
 const navigation = computed(() => [
   { label: 'Dashboard', icon: 'grid', route: 'CompanyDashboardPage' },
   { label: 'Jobs', icon: 'briefcase', route: 'CompanyJobsPage' },
-  { label: 'Applicants', icon: 'users', count: String(applicantCounts.value.SHORTLISTED), route: 'CompanyApplicantsPage' },
+  { label: 'Applicants', icon: 'users', count: applicantCounts.value.SHORTLISTED, route: 'CompanyApplicantsPage' },
 ])
 const accountNavigation = [
   { label: 'Settings', icon: 'settings', route: 'CompanySettingsPage' },
@@ -266,6 +283,7 @@ function openJobComposer() {
 function openNotifications() {
   showNotifications.value = !showNotifications.value
   showSidebarProfileMenu.value = false
+  if (showNotifications.value) void refreshCompanyNotifications()
 }
 
 function openSidebarProfileMenu() {
@@ -279,9 +297,35 @@ function openCompanyProfile() {
   void router.push({ name: 'CompanyProfilePage' })
 }
 
-function markNotificationsRead() {
-  notificationsRead.value = true
+async function markNotificationsRead() {
+  try {
+    await markAllCompanyNotificationsRead()
+  } catch (cause) {
+    companyNotificationsError.value = cause instanceof Error
+      ? cause.message
+      : 'Unable to mark notifications as read.'
+  }
+}
+
+async function openCompanyNotification(notification: CompanyNotification) {
+  try {
+    await markCompanyNotificationRead(notification.id)
+  } catch (cause) {
+    companyNotificationsError.value = cause instanceof Error
+      ? cause.message
+      : 'Unable to update this notification.'
+  }
   showNotifications.value = false
+  void router.push(notification.link)
+}
+
+function notificationTime(value: string) {
+  return new Intl.DateTimeFormat(undefined, {
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  }).format(new Date(value))
 }
 
 function handleShortcut(event: KeyboardEvent) {
@@ -296,8 +340,42 @@ function handleShortcut(event: KeyboardEvent) {
   }
 }
 
-onMounted(() => window.addEventListener('keydown', handleShortcut))
-onBeforeUnmount(() => window.removeEventListener('keydown', handleShortcut))
+async function refreshCompanyAvatar() {
+  try {
+    const { company } = await loadCompanyProfile()
+    if (!company.logoUrl) {
+      if (companyAvatarObjectUrl) URL.revokeObjectURL(companyAvatarObjectUrl)
+      companyAvatarObjectUrl = ''
+      companyAvatarUrl.value = ''
+      return
+    }
+    if (/^https:\/\//i.test(company.logoUrl)) {
+      if (companyAvatarObjectUrl) URL.revokeObjectURL(companyAvatarObjectUrl)
+      companyAvatarObjectUrl = ''
+      companyAvatarUrl.value = company.logoUrl
+      return
+    }
+    const blob = await apiBlob('/company/profile/logo')
+    if (companyAvatarObjectUrl) URL.revokeObjectURL(companyAvatarObjectUrl)
+    companyAvatarObjectUrl = URL.createObjectURL(blob)
+    companyAvatarUrl.value = companyAvatarObjectUrl
+  } catch {
+    // The company can use initials until a photo has been uploaded.
+  }
+}
+
+onMounted(() => {
+  window.addEventListener('keydown', handleShortcut)
+  window.addEventListener('company-logo-updated', refreshCompanyAvatar)
+  void refreshCompanyAvatar()
+  startCompanyNotificationRealtime()
+})
+onBeforeUnmount(() => {
+  window.removeEventListener('keydown', handleShortcut)
+  window.removeEventListener('company-logo-updated', refreshCompanyAvatar)
+  if (companyAvatarObjectUrl) URL.revokeObjectURL(companyAvatarObjectUrl)
+  stopCompanyNotificationRealtime()
+})
 </script>
 
 <template>
@@ -308,7 +386,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', handleShortcut))
 
     <aside id="company-navigation" class="company-sidebar" :class="{ open: mobileMenuOpen }">
       <div class="sidebar-brand">
-        <BrandLogo variant="dark" :icon-only="sidebarCollapsed" />
+        <BrandLogo variant="dark" :icon-only="sidebarCollapsed" :inverted="companyDarkMode" />
         <button type="button" class="collapse-button mobile-close" aria-label="Close navigation" @click="mobileMenuOpen = false"><UiIcon name="close" :size="18" /></button>
       </div>
 
@@ -327,7 +405,8 @@ onBeforeUnmount(() => window.removeEventListener('keydown', handleShortcut))
 
         <div class="profile-wrap">
           <button type="button" class="sidebar-profile" aria-label="Company account menu" :aria-expanded="showSidebarProfileMenu" aria-controls="sidebar-profile-menu" @click="openSidebarProfileMenu">
-            <span class="avatar avatar-small avatar-emma">{{ initials }}</span>
+            <img v-if="companyAvatarUrl" class="avatar avatar-small company-account-photo" :src="companyAvatarUrl" :alt="displayName + ' logo'" />
+            <span v-else class="avatar avatar-small avatar-emma">{{ initials }}</span>
             <span class="profile-copy"><strong>{{ displayName }}</strong></span>
             <UiIcon name="chevron" :size="16" />
           </button>
@@ -351,8 +430,19 @@ onBeforeUnmount(() => window.removeEventListener('keydown', handleShortcut))
         <div class="header-actions">
           <label v-if="searchEnabled" class="header-search"><UiIcon name="search" :size="18" /><input ref="searchInput" v-model="search" type="search" :placeholder="route.name === 'CompanyJobsPage' ? 'Search job roles' : route.name === 'CompanyApplicantsPage' ? 'Search applicants' : 'Search candidates or roles'" aria-label="Search jobs and applicants" /><kbd>⌘K</kbd></label>
           <div class="notification-wrap">
-            <button type="button" class="icon-button" aria-label="Notifications" :aria-expanded="showNotifications" @click="openNotifications"><UiIcon name="bell" :size="19" /><span v-if="!notificationsRead" class="notification-dot" /></button>
-            <div v-if="showNotifications" class="notification-popover"><div class="popover-heading"><strong>Notifications</strong><button type="button" @click="markNotificationsRead">Mark as read</button></div><p><span class="notice-dot accent-dot" /> Four applications need review.</p><p><span class="notice-dot green-dot" /> The Product Designer role is live.</p></div>
+            <button type="button" class="icon-button" :aria-label="companyUnreadNotificationCount ? `Notifications, ${companyUnreadNotificationCount} unread` : 'Notifications'" :aria-expanded="showNotifications" @click="openNotifications"><UiIcon name="bell" :size="19" /><span v-if="companyUnreadNotificationCount > 0" class="notification-badge">{{ companyUnreadNotificationCount }}</span></button>
+            <div v-if="showNotifications" class="notification-popover" aria-label="Company notifications">
+              <div class="popover-heading"><strong>Notifications</strong><button v-if="companyUnreadNotificationCount" type="button" @click="markNotificationsRead">Mark all as read</button></div>
+              <p v-if="companyNotificationsError" class="notification-state notification-error" role="alert">{{ companyNotificationsError }} <button type="button" @click="refreshCompanyNotifications">Try again</button></p>
+              <p v-if="companyNotificationsLoading && !companyNotifications.length" class="notification-state" role="status">Loading notifications…</p>
+              <div v-else-if="companyNotifications.length" class="notification-list">
+                <button v-for="notification in companyNotifications" :key="notification.id" type="button" class="notification-item" :class="{ unread: !notification.readAt }" @click="openCompanyNotification(notification)">
+                  <span class="notice-dot accent-dot" />
+                  <span class="notification-copy"><strong>{{ notification.title }}</strong><small>{{ notification.message }}</small><time :datetime="notification.createdAt">{{ notificationTime(notification.createdAt) }}</time></span>
+                </button>
+              </div>
+              <p v-else-if="!companyNotificationsLoading && !companyNotificationsError" class="notification-state">You’re all caught up. New applications will appear here.</p>
+            </div>
           </div>
         </div>
       </header>
@@ -439,7 +529,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', handleShortcut))
 :global(button), :global(input), :global(select) { font: inherit; }
 
 .company-shell { --sidebar-width: 218px; --ink: #19233c; --ink-soft: #40506b; --muted: #657088; --line: #e2e4e8; --line-strong: #c9ced7; --canvas: #f6f6f3; --surface: #fbfbf9; --surface-raised: #fff; --accent: #6a56cf; --accent-dark: #5643b9; --accent-soft: #f0eefb; min-height: 100dvh; display: flex; background-color: var(--canvas); color: var(--ink); font-family: "Outfit", "Bai Jamjuree", ui-sans-serif, system-ui, sans-serif; transition: background-color 220ms ease, color 220ms ease; }
-.company-shell.theme-dark { --ink: #edf1f7; --ink-soft: #b4bfd1; --muted: #8491a7; --line: #2c3545; --line-strong: #455268; --canvas: #121722; --surface: #171e2a; --surface-raised: #1c2533; --accent: #9a88f1; --accent-dark: #b8aaff; --accent-soft: #2b2744; }
+.company-shell.theme-dark { --ink: #edf1f7; --ink-soft: #c1cada; --muted: #aab6ca; --line: #2c3545; --line-strong: #455268; --canvas: #121722; --surface: #171e2a; --surface-raised: #1c2533; --accent: #9a88f1; --accent-dark: #c3b8ff; --accent-soft: #2b2744; }
 :global(body:has(.company-shell.theme-dark)) { background: #121722; color: #edf1f7; }
 .sidebar-is-collapsed.company-shell { --sidebar-width: 82px; }
 .skip-link { position: fixed; top: 10px; left: 10px; z-index: 100; padding: 10px 14px; border-radius: 6px; background: var(--ink); color: #fff; transform: translateY(-160%); transition: transform 180ms ease; }
@@ -504,13 +594,25 @@ button:focus-visible, select:focus-visible, input:focus-visible { outline: 3px s
 .header-profile-menu > span { margin: 2px 0 10px; color: var(--muted); font-size: 12px; }
 .header-profile-menu button { padding: 8px 7px; border: 0; border-radius: 5px; background: transparent; color: var(--ink-soft); text-align: left; font-size: 13px; cursor: pointer; }
 .header-profile-menu button:hover { background: var(--accent-soft); color: var(--ink); }
-.notification-dot { position: absolute; top: 8px; right: 8px; width: 6px; height: 6px; border: 1px solid #fff; border-radius: 50%; background: var(--accent); }
+.notification-badge { position: absolute; top: 1px; right: -2px; min-width: 18px; height: 18px; padding: 0 5px; border: 1px solid var(--surface-raised); border-radius: 999px; display: grid; place-items: center; background: #bd435d; color: #fff; font-size: 10px; font-weight: 750; line-height: 1; font-variant-numeric: tabular-nums; }
 .notification-wrap { position: relative; }
-.notification-popover { position: absolute; top: 50px; right: 0; z-index: 10; width: 290px; padding: 16px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-raised); box-shadow: 0 20px 50px rgb(11 43 130 / 12%); font-size: 14px; }
+.notification-popover { position: absolute; top: 50px; right: 0; z-index: 10; width: min(340px, calc(100vw - 32px)); max-height: min(440px, calc(100dvh - 150px)); overflow: hidden; padding: 16px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-raised); box-shadow: 0 20px 50px rgb(11 43 130 / 12%); font-size: 14px; }
 .popover-heading { display: flex; align-items: center; justify-content: space-between; padding-bottom: 11px; border-bottom: 1px solid var(--line); }
 .popover-heading strong { font-size: 15px; }
 .popover-heading button { padding: 0; border: 0; background: none; color: var(--accent-dark); font-size: 13px; cursor: pointer; }
-.notification-popover p { display: flex; align-items: center; gap: 9px; margin: 13px 0 0; color: var(--ink-soft); }
+.notification-list { max-height: 360px; overflow-y: auto; scrollbar-width: none; -ms-overflow-style: none; }
+.notification-list::-webkit-scrollbar { display: none; }
+.notification-item { width: 100%; padding: 12px 2px; border: 0; border-bottom: 1px solid var(--line); display: flex; align-items: flex-start; gap: 10px; background: transparent; color: var(--ink-soft); text-align: left; cursor: pointer; }
+.notification-item:last-child { border-bottom: 0; }
+.notification-item:hover, .notification-item.unread { background: var(--surface); }
+.notification-item .notice-dot { margin-top: 5px; }
+.notification-copy { min-width: 0; display: grid; gap: 3px; }
+.notification-copy strong { color: var(--ink); font-size: 13px; font-weight: 600; }
+.notification-copy small { color: var(--ink-soft); font-size: 12px; line-height: 1.45; overflow-wrap: anywhere; }
+.notification-copy time { color: var(--muted); font-size: 11px; }
+.notification-popover .notification-state { display: block; margin: 13px 0 0; color: var(--ink-soft); font-size: 13px; line-height: 1.5; }
+.notification-popover .notification-error { color: #b95465; }
+.notification-error button { margin-left: 5px; border: 0; background: transparent; color: var(--accent-dark); text-decoration: underline; cursor: pointer; }
 .notice-dot, .funnel-dot { width: 7px; height: 7px; flex: 0 0 7px; border-radius: 2px; }
 
 .dashboard-content { width: min(100%, 1840px); margin: 0 auto; padding: 45px clamp(24px, 3vw, 48px) 64px; }
@@ -587,6 +689,7 @@ button:focus-visible, select:focus-visible, input:focus-visible { outline: 3px s
 .muted-cell { color: var(--ink-soft); font-size: 13px; }
 .avatar { width: 34px; height: 34px; flex: 0 0 34px; border-radius: 9px; display: grid; place-items: center; font-size: 11px; font-weight: 600; }
 .avatar-small { width: 34px; height: 34px; flex-basis: 34px; }
+.company-account-photo { padding: 2px; object-fit: contain; }
 .avatar-tiny { width: 29px; height: 29px; flex-basis: 29px; border-radius: 7px; font-size: 10px; }
 .avatar-emma { background: #f0edff; color: #5f4bd2; }
 .avatar-coral { background: #fff0f1; color: #9b5262; }
@@ -733,7 +836,9 @@ button:focus-visible, select:focus-visible, input:focus-visible { outline: 3px s
 .row-action { padding: 0; }
 
 :global(.company-shell.theme-dark .company-page) { color: var(--ink); }
-:global(.company-shell.theme-dark .jobs-overview), :global(.company-shell.theme-dark .jobs-workspace), :global(.company-shell.theme-dark .job-composer), :global(.company-shell.theme-dark .candidate-directory), :global(.company-shell.theme-dark .candidate-modal), :global(.company-shell.theme-dark .profile-overview), :global(.company-shell.theme-dark .profile-card), :global(.company-shell.theme-dark .missing-profile) { border-color: var(--line); background: var(--surface-raised); color: var(--ink); }
+:global(.company-shell.theme-dark .row-action-danger) { color: #ff9aa9; }
+:global(.company-shell.theme-dark .row-action-danger:hover) { color: #ffc0c8; }
+:global(.company-shell.theme-dark .jobs-overview), :global(.company-shell.theme-dark .jobs-workspace), :global(.company-shell.theme-dark .job-composer), :global(.company-shell.theme-dark .job-view-dialog), :global(.company-shell.theme-dark .candidate-directory), :global(.company-shell.theme-dark .candidate-modal), :global(.company-shell.theme-dark .profile-overview), :global(.company-shell.theme-dark .profile-card), :global(.company-shell.theme-dark .missing-profile) { border-color: var(--line); background: var(--surface-raised); color: var(--ink); }
 :global(.company-shell.theme-dark .company-secondary), :global(.company-shell.theme-dark .close-composer), :global(.company-shell.theme-dark .modal-toolbar button) { border-color: var(--line); background: var(--surface); color: var(--ink-soft); }
 :global(.company-shell.theme-dark .jobs-table th), :global(.company-shell.theme-dark .table-heading), :global(.company-shell.theme-dark .modal-actions) { border-color: var(--line); background: var(--surface); color: var(--muted); }
 :global(.company-shell.theme-dark .jobs-table td), :global(.company-shell.theme-dark .candidate-table li + li), :global(.company-shell.theme-dark .modal-toolbar), :global(.company-shell.theme-dark .candidate-facts), :global(.company-shell.theme-dark .profile-main section + section), :global(.company-shell.theme-dark .profile-aside), :global(.company-shell.theme-dark .experience-item), :global(.company-shell.theme-dark .application-grid) { border-color: var(--line); }
@@ -741,6 +846,35 @@ button:focus-visible, select:focus-visible, input:focus-visible { outline: 3px s
 :global(.company-shell.theme-dark .candidate-row:hover), :global(.company-shell.theme-dark .applicant-filters button:hover) { background: var(--surface); }
 :global(.company-shell.theme-dark .applicant-filters button.active), :global(.company-shell.theme-dark .applicant-filters button span), :global(.company-shell.theme-dark .jobs-tabs button span) { border-color: var(--line-strong); background: var(--accent-soft); color: var(--accent-dark); }
 :global(.company-shell.theme-dark .job-form input), :global(.company-shell.theme-dark .job-form select), :global(.company-shell.theme-dark .stage-control select) { border-color: var(--line-strong); background: var(--surface); color: var(--ink); }
+:global(.company-shell.theme-dark .job-form textarea) { border-color: var(--line-strong); background: var(--surface); color: var(--ink); }
+:global(.company-shell.theme-dark .job-form :is(input, select, textarea)), :global(.company-shell.theme-dark .field-grid :is(input, textarea, select)), :global(.company-shell.theme-dark .contact-fields :is(input, select, textarea)) { color-scheme: dark; }
+:global(.company-shell.theme-dark .composer-heading p) { color: var(--accent-dark); }
+:global(.company-shell.theme-dark .composer-copy), :global(.company-shell.theme-dark .job-form label) { color: var(--ink-soft); }
+:global(.company-shell.theme-dark .job-form :is(input, textarea)::placeholder) { color: var(--muted); }
+:global(.company-shell.theme-dark .settings-form), :global(.company-shell.theme-dark .contact-card) { border-color: var(--line); background: var(--surface-raised); color: var(--ink); }
+:global(.company-shell.theme-dark .settings-footer) { border-color: var(--line); background: var(--surface); }
+:global(.company-shell.theme-dark .field-grid label), :global(.company-shell.theme-dark .contact-fields label) { color: var(--ink-soft); }
+:global(.company-shell.theme-dark .field-grid :is(input, textarea, select)), :global(.company-shell.theme-dark .contact-fields :is(input, textarea, select)) { border-color: var(--line-strong); background: var(--surface); color: var(--ink); }
+:global(.company-shell.theme-dark .field-grid :is(input, textarea, select)::placeholder), :global(.company-shell.theme-dark .contact-fields :is(input, textarea, select)::placeholder) { color: var(--muted); }
+:global(.company-shell.theme-dark .settings-section + .settings-section), :global(.company-shell.theme-dark .settings-footer), :global(.company-shell.theme-dark .contact-card-heading) { border-color: var(--line); }
+:global(.company-shell.theme-dark .company-profile-page) { color: var(--ink); }
+:global(.company-shell.theme-dark .identity-copy h2), :global(.company-shell.theme-dark .card-heading h3), :global(.company-shell.theme-dark .form-heading h3), :global(.company-shell.theme-dark .section-heading h4), :global(.company-shell.theme-dark .details-card dd), :global(.company-shell.theme-dark .verified-row strong), :global(.company-shell.theme-dark .empty-state strong) { color: var(--ink); }
+:global(.company-shell.theme-dark .identity-copy > p), :global(.company-shell.theme-dark .identity-meta), :global(.company-shell.theme-dark .about-card > p), :global(.company-shell.theme-dark .focus-card > p), :global(.company-shell.theme-dark .empty-state p), :global(.company-shell.theme-dark .form-heading p), :global(.company-shell.theme-dark .section-heading p), :global(.company-shell.theme-dark .settings-footer p), :global(.company-shell.theme-dark .contact-form-footer p) { color: var(--ink-soft); }
+:global(.company-shell.theme-dark .details-card dt), :global(.company-shell.theme-dark .verified-row small), :global(.company-shell.theme-dark .identity-meta span) { color: var(--muted); }
+:global(.company-shell.theme-dark .fact-summary), :global(.company-shell.theme-dark .empty-state), :global(.company-shell.theme-dark .verified-row), :global(.company-shell.theme-dark .form-actions) { background: var(--surface); }
+:global(.company-shell.theme-dark .fact-summary > div + div), :global(.company-shell.theme-dark .form-heading), :global(.company-shell.theme-dark .form-section + .form-section), :global(.company-shell.theme-dark .form-actions), :global(.company-shell.theme-dark .profile-summary), :global(.company-shell.theme-dark .profile-main section + section), :global(.company-shell.theme-dark .education-entry) { border-color: var(--line); }
+:global(.company-shell.theme-dark .fact-summary span), :global(.company-shell.theme-dark .count-chip) { color: var(--ink-soft); }
+:global(.company-shell.theme-dark .identity-meta b) { color: var(--accent-dark); }
+:global(.company-shell.theme-dark .fact-summary strong) { color: var(--accent-dark); }
+:global(.company-shell.theme-dark .team-chips span), :global(.company-shell.theme-dark .count-chip), :global(.company-shell.theme-dark .experience-skills span), :global(.company-shell.theme-dark .skill-list span) { background: var(--accent-soft); color: var(--accent-dark); }
+:global(.company-shell.theme-dark .field-grid input), :global(.company-shell.theme-dark .field-grid select), :global(.company-shell.theme-dark .standalone-field textarea) { border-color: var(--line-strong); background: var(--surface); color: var(--ink); }
+:global(.company-shell.theme-dark .field-grid label), :global(.company-shell.theme-dark .standalone-field), :global(.company-shell.theme-dark .section-heading p), :global(.company-shell.theme-dark .details-card dd), :global(.company-shell.theme-dark .education-entry span), :global(.company-shell.theme-dark .experience-copy ul), :global(.company-shell.theme-dark .education-card > p), :global(.company-shell.theme-dark .application-text dd) { color: var(--ink-soft); }
+:global(.company-shell.theme-dark .secondary-button) { border-color: var(--line-strong); background: var(--surface); color: var(--ink-soft); }
+:global(.company-shell.theme-dark .save-message) { background: #20372e; color: #b8e2c7; }
+:global(.company-shell.theme-dark .error-message) { background: #402d35; color: #f0bac4; }
+:global(.company-shell.theme-dark .job-error), :global(.company-shell.theme-dark .applicant-error) { color: #f0bac4; }
+:global(.company-shell.theme-dark .job-status-closed), :global(.company-shell.theme-dark .job-status-archived) { background: #2b3140; color: #c5cada; }
+:global(.company-shell.theme-dark .notification-item.unread) { background: var(--surface); }
 :global(.company-shell.theme-dark .candidate-name strong), :global(.company-shell.theme-dark .role-cell strong), :global(.company-shell.theme-dark .identity-main h3), :global(.company-shell.theme-dark .name-line h1), :global(.company-shell.theme-dark .profile-main h4), :global(.company-shell.theme-dark .profile-aside h4), :global(.company-shell.theme-dark .modal-toolbar span), :global(.company-shell.theme-dark .candidate-facts dd), :global(.company-shell.theme-dark .profile-summary dd), :global(.company-shell.theme-dark .experience-heading h3), :global(.company-shell.theme-dark .resume-row strong), :global(.company-shell.theme-dark .application-grid dd), :global(.company-shell.theme-dark .preference-card dd) { color: var(--ink); }
 :global(.company-shell.theme-dark .candidate-name small), :global(.company-shell.theme-dark .role-cell small), :global(.company-shell.theme-dark .location-cell), :global(.company-shell.theme-dark .applied-cell), :global(.company-shell.theme-dark .identity-main p), :global(.company-shell.theme-dark .identity-copy > p), :global(.company-shell.theme-dark .profile-main p), :global(.company-shell.theme-dark .experience-heading p), :global(.company-shell.theme-dark .modal-toolbar small) { color: var(--ink-soft); }
 :global(.company-shell.theme-dark .profile-summary), :global(.company-shell.theme-dark .experience-heading time), :global(.company-shell.theme-dark .modal-actions) { background: var(--surface); }

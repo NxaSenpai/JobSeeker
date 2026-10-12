@@ -94,7 +94,6 @@ onMounted(async () => {
         </dl>
 
         <p class="profile-note">
-          Admin accounts use a minimal profile. Password changes are handled through the secure sign-in recovery flow.
         </p>
       </article>
     </section>

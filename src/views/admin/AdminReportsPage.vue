@@ -600,7 +600,6 @@ function dateLabel(value: string) {
           </template>
 
           <div v-else class="detail-empty">
-            <span class="empty-icon"><UiIcon name="chart" :size="20" /></span>
             <h2 id="report-detail-heading">Select a report to review</h2>
             <p>
               The full description and a safe summary of the reported item will

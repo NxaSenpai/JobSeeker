@@ -64,9 +64,6 @@ function dateLabel(value: string) {
     description="Follow the review status of concerns you’ve sent to the JobSeeker team."
   >
     <div class="mb-6 flex flex-wrap items-end justify-between gap-4">
-      <p class="account-muted">
-        {{ total }} {{ total === 1 ? "report" : "reports" }} submitted
-      </p>
       <label class="account-field w-full sm:max-w-64"
         >Filter by status
         <select v-model="status">

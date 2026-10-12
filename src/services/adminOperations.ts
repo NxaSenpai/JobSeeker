@@ -10,9 +10,72 @@ export type AdminUser = {
   lastName: string | null
   companyName: string | null
   contactName: string | null
+  headline: string | null
+  location: string | null
+  bio: string | null
   emailVerified: boolean
+  termsAccepted: boolean
   suspendedAt: string | null
   suspensionReason: string | null
+  createdAt: string
+  updatedAt: string
+  profile?: AdminUserProfile | null
+  resumes?: AdminUserResume[]
+}
+
+export type AdminUserEducation = {
+  school: string
+  degree: string
+  fieldOfStudy: string
+  startDate: string
+  endDate: string
+  description: string
+}
+
+export type AdminUserExperience = {
+  company: string
+  position: string
+  employmentType: string
+  startDate: string
+  endDate: string
+  current: boolean
+  description: string
+}
+
+export type AdminUserLanguage = {
+  name: string
+  proficiency: string
+}
+
+export type AdminUserProfile = {
+  id: string
+  userId: string
+  firstName: string
+  lastName: string
+  headline: string | null
+  bio: string | null
+  phone: string | null
+  profileImageUrl: string | null
+  dateOfBirth: string | null
+  location: string | null
+  websiteUrl: string | null
+  linkedinUrl: string | null
+  githubUrl: string | null
+  isOpenToWork: boolean
+  skills: string[]
+  education: AdminUserEducation[]
+  experience: AdminUserExperience[]
+  languages: AdminUserLanguage[]
+  createdAt: string
+  updatedAt: string
+}
+
+export type AdminUserResume = {
+  id: string
+  fileName: string
+  mimeType: string
+  fileSize: number
+  isDefault: boolean
   createdAt: string
   updatedAt: string
 }

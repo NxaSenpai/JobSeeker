@@ -1,18 +1,45 @@
 <script setup lang="ts">
-import { reactive, ref } from 'vue'
+import { onMounted, reactive, ref } from 'vue'
 import CompanyPageHeader from '@/components/company/CompanyPageHeader.vue'
 import UiIcon from '@/components/company/UiIcon.vue'
-import { getAuthSession } from '@/services/auth'
+import { getAuthSession, updateAuthUser } from '@/services/auth'
 import { readCompanySettings, saveCompanySettings, type CompanySettings } from '@/services/companySettings'
+import { loadCompanyProfile, updateCompanyProfile } from '@/services/companyProfile'
 import { setCompanyDarkMode } from '@/services/companyTheme'
 
 const user = getAuthSession()?.user
 const settings = reactive<CompanySettings>(readCompanySettings(user))
 const saved = ref(false)
+const saving = ref(false)
+const settingsError = ref('')
 
-function saveSettings() {
+onMounted(async () => {
+  try {
+    const { company } = await loadCompanyProfile()
+    if (company.contactName) settings.contactName = company.contactName
+    if (company.timezone) settings.timezone = company.timezone
+  } catch {
+    // Leave the cached defaults visible if the profile service is unavailable.
+  }
+})
+
+async function saveSettings() {
   setCompanyDarkMode(settings.darkMode)
-  saved.value = saveCompanySettings({ ...settings })
+  saved.value = false
+  settingsError.value = ''
+  saving.value = true
+  try {
+    const result = await updateCompanyProfile({
+      contactName: settings.contactName,
+      timezone: settings.timezone,
+    })
+    if (user) updateAuthUser({ ...user, contactName: result.company.contactName })
+    saved.value = saveCompanySettings({ ...settings })
+  } catch (cause) {
+    settingsError.value = cause instanceof Error ? cause.message : 'Company settings could not be saved.'
+  } finally {
+    saving.value = false
+  }
 }
 
 function applyDarkMode() {
@@ -49,7 +76,7 @@ function applyDarkMode() {
         <label class="preference-row"><span><strong>Weekly hiring summary</strong><small>A short overview of activity from the previous week.</small></span><input v-model="settings.weeklySummary" type="checkbox" /></label>
       </section>
 
-      <div class="settings-footer"><p v-if="saved" role="status">Saved on this device.</p><p v-else>Changes stay in this browser until company settings are connected to your account.</p><button class="save-button" type="submit">Save changes</button></div>
+      <div class="settings-footer"><p v-if="saved" role="status">Company contact and time zone saved. Workspace preferences stay on this device.</p><p v-else-if="settingsError" class="settings-error" role="alert">{{ settingsError }}</p><p v-else>Save company contact and time zone to your account.</p><button class="save-button" type="submit" :disabled="saving">{{ saving ? 'Saving…' : 'Save changes' }}</button></div>
     </form>
   </div>
 </template>
@@ -88,5 +115,7 @@ function applyDarkMode() {
 .settings-footer p { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.5; }
 .save-button { min-height: 39px; padding: 0 15px; border: 0; border-radius: 7px; background: var(--accent); color: #fff; font-size: 13px; font-weight: 600; cursor: pointer; transition: background 160ms ease, transform 160ms ease; }
 .save-button:hover { background: #6f5cf9; transform: translateY(-1px); }
+.save-button:disabled { opacity: .6; cursor: wait; transform: none; }
+.settings-error { color: #a03f53 !important; }
 @media (max-width: 620px) { .settings-section { padding: 19px 17px 21px; } .field-grid { grid-template-columns: 1fr; } .field-grid .field-wide { grid-column: auto; } .settings-footer { align-items: flex-start; flex-direction: column; padding: 14px 17px; } .save-button { align-self: flex-end; } }
 </style>

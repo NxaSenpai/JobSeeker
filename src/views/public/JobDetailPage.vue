@@ -69,6 +69,9 @@ onBeforeUnmount(() => {
 });
 
 const retry = () => void loadJob(String(route.params.id ?? ""));
+function formatExperienceLevel(value: string) {
+  return value.toLowerCase().split("_").map((part) => part.charAt(0).toUpperCase() + part.slice(1)).join(" ");
+}
 </script>
 
 <template>
@@ -117,6 +120,11 @@ const retry = () => void loadJob(String(route.params.id ?? ""));
                 ><span class="hidden text-[#b6addd] sm:inline">•</span
                 ><span>{{ job.type }}</span>
               </div>
+              <div v-if="job.category || job.industry || job.team" class="mt-4 flex flex-wrap gap-2">
+                <span v-if="job.category" class="rounded-full border border-[#dcd5f4] bg-white px-3 py-1 text-xs font-medium text-[#6551cb]">{{ job.category }}</span>
+                <span v-if="job.industry" class="rounded-full border border-[#dcd5f4] bg-white px-3 py-1 text-xs text-[#56679b]">{{ job.industry }}</span>
+                <span v-if="job.team" class="rounded-full border border-[#dcd5f4] bg-white px-3 py-1 text-xs text-[#56679b]">{{ job.team }}</span>
+              </div>
             </div>
           </div>
           <div class="rounded-xl border border-[#dcd5f4] bg-white px-5 py-4">
@@ -130,8 +138,6 @@ const retry = () => void loadJob(String(route.params.id ?? ""));
         </div>
       </div>
     </section>
-
-    <section v-if="job.isDemo" class="mx-auto max-w-[1440px] px-6 pt-6 sm:px-10 lg:px-[108px]" role="note"><p class="rounded-xl border border-[#eadcb0] bg-[#fff9e8] px-5 py-3 text-sm leading-6 text-[#725b20]">Sample listing: applications are stored for demonstration only and are not delivered to {{ job.company }}.</p></section>
 
     <section
       class="mx-auto grid max-w-[1440px] gap-10 px-6 py-10 sm:px-10 lg:grid-cols-[minmax(0,1fr)_340px] lg:px-[108px] lg:py-14"
@@ -152,11 +158,14 @@ const retry = () => void loadJob(String(route.params.id ?? ""));
             >
               About the role
             </h2>
-            <p class="mt-4 max-w-3xl text-base leading-8">
+            <p v-if="job.summary" class="mt-4 max-w-3xl text-lg font-medium leading-8 text-[#364b84]">
+              {{ job.summary }}
+            </p>
+            <p class="mt-3 max-w-3xl text-base leading-8">
               {{ job.description }}
             </p>
           </section>
-          <section>
+          <section v-if="job.responsibilities.length">
             <h2
               class="text-2xl font-semibold tracking-[-0.02em] text-[#0b2b82]"
             >
@@ -175,7 +184,7 @@ const retry = () => void loadJob(String(route.params.id ?? ""));
               </li>
             </ul>
           </section>
-          <section>
+          <section v-if="job.requirements.length">
             <h2
               class="text-2xl font-semibold tracking-[-0.02em] text-[#0b2b82]"
             >
@@ -200,6 +209,14 @@ const retry = () => void loadJob(String(route.params.id ?? ""));
                     d="m5 12 4 4L19 6"
                   /></svg
                 >{{ item }}
+              </li>
+            </ul>
+          </section>
+          <section v-if="job.benefits?.length">
+            <h2 class="text-2xl font-semibold tracking-[-0.02em] text-[#0b2b82]">Benefits</h2>
+            <ul class="mt-5 grid gap-3 sm:grid-cols-2">
+              <li v-for="item in job.benefits" :key="item" class="flex gap-3 rounded-xl border border-[#e7e4f4] bg-white px-4 py-3 leading-6">
+                <span class="mt-2 size-2 shrink-0 rounded-full bg-[#7b66ff]"></span>{{ item }}
               </li>
             </ul>
           </section>
@@ -298,17 +315,46 @@ const retry = () => void loadJob(String(route.params.id ?? ""));
               </p>
               <p class="text-xs text-[#67749c]">{{ company.industry }}</p>
             </div>
-          </div>
-          <p class="mt-4 text-sm leading-6 text-[#62709a]">
-            {{ company.about.slice(0, 142) }}…
-          </p>
-          <span class="mt-4 inline-flex text-sm font-semibold text-[#715cdf]"
-            >View company profile →</span
-          ></router-link
-        >
+          </div></router-link>
         <div class="rounded-2xl border border-[#e7e4f4] bg-[#fcfbff] p-5">
           <p class="font-semibold text-[#0b2b82]">Role overview</p>
           <dl class="mt-4 space-y-4 text-sm">
+            <div v-if="job.category" class="flex justify-between gap-4">
+              <dt class="text-[#68769d]">Category</dt>
+              <dd class="text-right font-medium text-[#314178]">{{ job.category }}</dd>
+            </div>
+            <div v-if="job.industry" class="flex justify-between gap-4">
+              <dt class="text-[#68769d]">Industry</dt>
+              <dd class="text-right font-medium text-[#314178]">{{ job.industry }}</dd>
+            </div>
+            <div v-if="job.experienceLevel" class="flex justify-between gap-4">
+              <dt class="text-[#68769d]">Experience</dt>
+              <dd class="text-right font-medium text-[#314178]">{{ formatExperienceLevel(job.experienceLevel) }}<span v-if="job.minExperienceYears !== null && job.minExperienceYears !== undefined"> · {{ job.minExperienceYears }}+ years</span></dd>
+            </div>
+            <div v-else-if="job.minExperienceYears !== null && job.minExperienceYears !== undefined" class="flex justify-between gap-4">
+              <dt class="text-[#68769d]">Experience</dt>
+              <dd class="text-right font-medium text-[#314178]">{{ job.minExperienceYears }}+ years</dd>
+            </div>
+            <div v-if="job.educationLevel" class="flex justify-between gap-4">
+              <dt class="text-[#68769d]">Education</dt>
+              <dd class="text-right font-medium text-[#314178]">{{ job.educationLevel }}</dd>
+            </div>
+            <div v-if="job.vacancies" class="flex justify-between gap-4">
+              <dt class="text-[#68769d]">Openings</dt>
+              <dd class="text-right font-medium text-[#314178]">{{ job.vacancies }}</dd>
+            </div>
+            <div v-if="job.city || job.country" class="flex justify-between gap-4">
+              <dt class="text-[#68769d]">Location</dt>
+              <dd class="text-right font-medium text-[#314178]">{{ [job.city, job.country].filter(Boolean).join(', ') }}</dd>
+            </div>
+            <div v-if="job.address" class="flex justify-between gap-4">
+              <dt class="text-[#68769d]">Address</dt>
+              <dd class="text-right font-medium text-[#314178]">{{ job.address }}</dd>
+            </div>
+            <div v-if="job.deadline" class="flex justify-between gap-4">
+              <dt class="text-[#68769d]">Apply by</dt>
+              <dd class="text-right font-medium text-[#314178]">{{ new Date(job.deadline).toLocaleDateString() }}</dd>
+            </div>
             <div class="flex justify-between gap-4">
               <dt class="text-[#68769d]">Employment</dt>
               <dd class="font-medium text-[#314178]">{{ job.type }}</dd>

@@ -29,6 +29,7 @@ defineProps<{ job: Job; compact?: boolean }>()
     <div class="flex flex-wrap gap-2">
       <span class="rounded-full bg-[#f3f1ff] px-3 py-1 text-xs font-medium text-[#6956d3]">{{ job.type }}</span>
       <span class="rounded-full bg-[#f5f7ff] px-3 py-1 text-xs font-medium text-[#52669e]">{{ job.workplace }}</span>
+      <span v-if="job.category" class="rounded-full bg-[#f8f8fb] px-3 py-1 text-xs text-[#68759d]">{{ job.category }}</span>
       <span v-for="skill in job.skills.slice(0, compact ? 2 : 3)" :key="skill" class="rounded-full bg-[#f8f8fb] px-3 py-1 text-xs text-[#68759d]">{{ skill }}</span>
     </div>
 

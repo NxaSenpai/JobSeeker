@@ -58,8 +58,8 @@ function toggleNotifications() {
     >
       <div class="notification-panel-heading">
         <div>
-          <p class="panel-kicker">Live queue totals</p>
-          <h2>Needs your attention</h2>
+          <p class="panel-kicker">Noification</p>
+          <h2>List of notification</h2>
         </div>
         <button
           class="notification-close"
@@ -70,7 +70,6 @@ function toggleNotifications() {
           <UiIcon name="close" :size="16" />
         </button>
       </div>
-      <p class="notification-explainer">Open work across moderation and verification—not unread messages.</p>
 
       <p v-if="loading && attentionCount === null" class="notification-state" role="status">
         Loading current queues…
@@ -138,7 +137,7 @@ function toggleNotifications() {
         :disabled="loading"
         @click="refresh"
       >
-        {{ loading ? "Refreshing…" : "Refresh queue totals" }}
+        {{ loading ? "Refreshing…" : "Refresh" }}
       </button>
     </section>
   </div>

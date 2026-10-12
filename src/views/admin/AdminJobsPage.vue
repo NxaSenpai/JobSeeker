@@ -2,6 +2,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import AdminWorkspaceLayout from '@/components/admin/AdminWorkspaceLayout.vue'
 import UiIcon from '@/components/company/UiIcon.vue'
+import { adminDarkMode } from '@/services/adminPreferences'
 import {
   approveAdminJob,
   hideAdminJob,
@@ -143,7 +144,7 @@ function changePage(nextPage: number) {
     search-placeholder="Search title or company"
     @search="applySearch"
   >
-    <section class="jobs-page" aria-labelledby="jobs-heading">
+    <section class="jobs-page" :class="{ 'theme-dark': adminDarkMode }" aria-labelledby="jobs-heading">
       <div class="page-heading">
         <div>
           <p class="eyebrow">Content moderation</p>
@@ -296,6 +297,21 @@ button:disabled { opacity: .55; cursor: not-allowed; }
 .pagination { margin-top: 15px; display: flex; align-items: center; justify-content: center; gap: 16px; color: #778194; font-size: 11px; }
 .pagination button { min-height: 32px; padding: 0 9px; border: 1px solid #dde0e6; border-radius: 5px; background: #fff; color: #4b5870; font-size: 11px; cursor: pointer; }
 .pagination button:disabled { opacity: .45; cursor: not-allowed; }
+.jobs-page.theme-dark { --page-ink: #edf1f7; --page-muted: #b4bfd1; --page-line: #2c3545; --page-line-strong: #455268; --page-surface: #171e2a; --page-raised: #1c2533; --page-accent: #b8aaff; color: var(--page-muted); }
+.jobs-page.theme-dark :is(.page-heading h2, .record-total strong, .job-title strong, .summary, .job-content-grid h4, .state-panel strong) { color: var(--page-ink) !important; }
+.jobs-page.theme-dark :is(.page-heading p:not(.eyebrow), .record-total span, .toolbar > label, .queue-note, .job-title span, .job-location, .company-status, .description, .job-content-grid ul, .reason-form label, .pagination) { color: var(--page-muted) !important; }
+.jobs-page.theme-dark :is(.toolbar, .job-list, .job-row, .job-details, .reason-form, .state-panel) { background-color: var(--page-raised) !important; border-color: var(--page-line) !important; box-shadow: none; }
+.jobs-page.theme-dark .job-row + .job-row, .jobs-page.theme-dark .job-details { border-color: var(--page-line) !important; }
+.jobs-page.theme-dark :is(.toolbar select, .reason-form textarea) { background-color: var(--page-surface) !important; border-color: var(--page-line-strong) !important; color: var(--page-ink) !important; }
+.jobs-page.theme-dark .details-button { color: var(--page-accent) !important; }
+.jobs-page.theme-dark .job-mark { background-color: #252e3c !important; color: #c1cada !important; }
+.jobs-page.theme-dark .job-meta span { background-color: #252e3c !important; color: #c1cada !important; }
+.jobs-page.theme-dark .status-pending { background-color: #342d1f !important; color: #efd994 !important; }
+.jobs-page.theme-dark :is(.status-approved, .approve-button, .notice.success) { border-color: #365e4c !important; background-color: #1d3329 !important; color: #a7dbba !important; }
+.jobs-page.theme-dark :is(.status-rejected, .danger-button, .notice.error, .error-state) { border-color: #68424b !important; background-color: #38242b !important; color: #f0aab3 !important; }
+.jobs-page.theme-dark :is(.status-hidden, .quiet-button, .pagination button) { border-color: var(--page-line-strong) !important; background-color: #252e3c !important; color: #c1cada !important; }
+.jobs-page.theme-dark .existing-reason { border-color: #625236 !important; background-color: #342d1f !important; color: #efd994 !important; }
+.jobs-page.theme-dark .pagination { border-color: var(--page-line) !important; }
 @media (max-width: 760px) {
   .job-main { grid-template-columns: 31px minmax(0, 1fr) auto; gap: 9px; }
   .job-location { grid-column: 2; grid-row: 2; }

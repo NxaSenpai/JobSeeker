@@ -123,9 +123,6 @@ function searchReports() {
       <div v-for="metric in metrics" :key="metric.label" class="summary-item">
         <span>{{ metric.label }}</span>
         <strong>{{ metric.value }}</strong>
-        <small :class="metric.error ? 'error-note' : 'live-note'">
-          {{ metric.note }}
-        </small>
       </div>
     </section>
 
@@ -167,11 +164,6 @@ function searchReports() {
             <UiIcon name="chevron" :size="16" />
           </router-link>
         </div>
-        <p class="pipeline-insight">
-          <strong>Connection status:</strong> {{ connectionLabel }}
-          <span v-if="reportCountError"> — the report API could not be reached.</span>
-          <span v-else> — this count comes from the backend report queue.</span>
-        </p>
       </article>
 
       <aside class="role-watch-panel" aria-labelledby="coverage-title">
@@ -209,46 +201,6 @@ function searchReports() {
           </div>
         </div>
       </aside>
-    </section>
-
-    <section class="panel table-panel" aria-labelledby="feature-status-title">
-      <div class="panel-heading table-heading">
-        <div>
-          <p class="panel-kicker">Platform controls</p>
-          <h3 id="feature-status-title">Admin feature status</h3>
-          <p>Core review queues connect to protected, audited moderation endpoints.</p>
-        </div>
-      </div>
-      <div class="feature-table">
-        <div class="feature-row feature-head">
-          <span>Area</span><span>Connection</span><span>Next step</span>
-        </div>
-        <div class="feature-row">
-          <strong>Report moderation</strong>
-          <span class="feature-status feature-live"><i /> Connected to API</span>
-          <router-link to="/admin/reports">Open queue <UiIcon name="chevron" :size="14" /></router-link>
-        </div>
-        <div class="feature-row">
-          <strong>Company verification</strong>
-          <span class="feature-status feature-live"><i /> Connected to API</span>
-          <router-link to="/admin/companies">Open review queue <UiIcon name="chevron" :size="14" /></router-link>
-        </div>
-        <div class="feature-row">
-          <strong>User management</strong>
-          <span class="feature-status feature-live"><i /> Connected to API</span>
-          <router-link to="/admin/users">Open accounts <UiIcon name="chevron" :size="14" /></router-link>
-        </div>
-        <div class="feature-row">
-          <strong>Job moderation</strong>
-          <span class="feature-status feature-live"><i /> Connected to API</span>
-          <router-link to="/admin/jobs">Open job queue <UiIcon name="chevron" :size="14" /></router-link>
-        </div>
-        <div class="feature-row">
-          <strong>Admin audit log</strong>
-          <span class="feature-status feature-live"><i /> Connected to API</span>
-          <router-link to="/admin/audit">Review activity <UiIcon name="chevron" :size="14" /></router-link>
-        </div>
-      </div>
     </section>
   </AdminWorkspaceLayout>
 </template>

@@ -20,15 +20,53 @@ export type CompanyJob = {
   postedAt: string
   createdAt: string
   description: string
+  summary: string
+  category: string | null
+  industry: string | null
+  country: string | null
+  city: string | null
+  address: string | null
+  responsibilities: string[]
+  requirements: string[]
+  benefits: string[]
+  skills: string[]
+  salaryMin: number | null
+  salaryMax: number | null
+  currency: string
+  salaryPeriod: 'HOUR' | 'MONTH' | 'YEAR'
+  experienceLevel: string | null
+  minExperienceYears: number | null
+  educationLevel: string | null
+  vacancies: number
+  deadline: string | null
 }
 
 export type CreateCompanyJobInput = {
   title: string
-  team: string
+  team?: string
   location: string
+  country?: string
+  city?: string
+  address?: string
+  category?: string
+  industry?: string
+  summary?: string
   description: string
   jobType: JobType
   workplaceType: WorkplaceType
+  responsibilities?: string[]
+  requirements?: string[]
+  benefits?: string[]
+  skills?: string[]
+  salaryMin?: number | null
+  salaryMax?: number | null
+  currency?: string
+  salaryPeriod?: 'HOUR' | 'MONTH' | 'YEAR'
+  experienceLevel?: string
+  minExperienceYears?: number | null
+  educationLevel?: string
+  vacancies?: number
+  deadline?: string | null
 }
 
 type ApiCompanyJob = {
@@ -43,6 +81,25 @@ type ApiCompanyJob = {
   postedAt?: string
   createdAt: string
   description?: string
+  summary?: string | null
+  category?: string | null
+  industry?: string | null
+  country?: string | null
+  city?: string | null
+  address?: string | null
+  responsibilities?: string[] | null
+  requirements?: string[] | null
+  benefits?: string[] | null
+  skills?: string[] | null
+  salaryMin?: number | null
+  salaryMax?: number | null
+  currency?: string
+  salaryPeriod?: 'HOUR' | 'MONTH' | 'YEAR'
+  experienceLevel?: string | null
+  minExperienceYears?: number | null
+  educationLevel?: string | null
+  vacancies?: number
+  deadline?: string | null
 }
 
 type CompanyJobsResponse = {
@@ -101,6 +158,25 @@ function normalizeJob(job: ApiCompanyJob): CompanyJob {
     postedAt: job.postedAt ?? job.createdAt,
     createdAt: job.createdAt,
     description: job.description ?? '',
+    summary: job.summary ?? '',
+    category: job.category ?? null,
+    industry: job.industry ?? null,
+    country: job.country ?? null,
+    city: job.city ?? null,
+    address: job.address ?? null,
+    responsibilities: Array.isArray(job.responsibilities) ? job.responsibilities : [],
+    requirements: Array.isArray(job.requirements) ? job.requirements : [],
+    benefits: Array.isArray(job.benefits) ? job.benefits : [],
+    skills: Array.isArray(job.skills) ? job.skills : [],
+    salaryMin: job.salaryMin ?? null,
+    salaryMax: job.salaryMax ?? null,
+    currency: job.currency ?? 'USD',
+    salaryPeriod: job.salaryPeriod ?? 'YEAR',
+    experienceLevel: job.experienceLevel ?? null,
+    minExperienceYears: job.minExperienceYears ?? null,
+    educationLevel: job.educationLevel ?? null,
+    vacancies: job.vacancies ?? 1,
+    deadline: job.deadline ?? null,
   }
 }
 
@@ -181,4 +257,30 @@ export async function updateCompanyJobStatus(id: string, status: JobStatus): Pro
   const job = normalizeJob(result.job)
   upsertJob(job)
   return job
+}
+
+export async function archiveCompanyJob(id: string): Promise<CompanyJob> {
+  const result = await apiRequest<{ job: ApiCompanyJob }>(`/company/jobs/${encodeURIComponent(id)}/archive`, {
+    method: 'PATCH',
+  })
+  const job = normalizeJob(result.job)
+  upsertJob(job)
+  return job
+}
+
+export async function restoreCompanyJob(id: string): Promise<CompanyJob> {
+  const result = await apiRequest<{ job: ApiCompanyJob }>(`/company/jobs/${encodeURIComponent(id)}/restore`, {
+    method: 'PATCH',
+  })
+  const job = normalizeJob(result.job)
+  upsertJob(job)
+  return job
+}
+
+export async function deleteCompanyJob(id: string): Promise<number> {
+  const result = await apiRequest<{ deleted: boolean; id: string; removedApplications: number }>(`/company/jobs/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+  })
+  companyJobs.value = companyJobs.value.filter(job => job.id !== id)
+  return result.removedApplications ?? 0
 }

@@ -38,7 +38,7 @@ const employerTransitions: Record<ApplicantStatus, ApplicantStatus[]> = {
   SHORTLISTED: ['UNDER_REVIEW', 'INTERVIEW', 'OFFERED', 'HIRED', 'REJECTED'],
   INTERVIEW: ['UNDER_REVIEW', 'SHORTLISTED', 'OFFERED', 'HIRED', 'REJECTED'],
   OFFERED: ['HIRED', 'REJECTED'],
-  HIRED: [],
+  HIRED: ['UNDER_REVIEW', 'SHORTLISTED', 'INTERVIEW', 'OFFERED'],
   REJECTED: [],
   WITHDRAWN: [],
 }
@@ -57,6 +57,7 @@ export type CompanyApplicantListItem = {
     headline: string
     location: string
     skills: string[]
+    profileImageUrl?: string | null
   }
   status: ApplicantStatus
   appliedAt: string
@@ -91,10 +92,14 @@ export type CompanyApplicantDetails = {
   id: string
   job: CompanyApplicantListItem['job']
   candidate: CompanyApplicantListItem['candidate'] & {
+    email?: string | null
+    phone?: string | null
     bio?: string | null
+    profileImageUrl?: string | null
     websiteUrl?: string | null
     linkedinUrl?: string | null
     githubUrl?: string | null
+    isOpenToWork?: boolean
     education?: ApplicantEducation[]
     experience?: ApplicantExperience[]
     languages?: ApplicantLanguage[]
@@ -149,9 +154,13 @@ function normalizeApplicantDetails(application: CompanyApplicantDetails): Compan
     ...application,
     candidate: {
       ...candidate,
+      email: candidate.email ?? null,
+      phone: candidate.phone ?? null,
       firstName: candidate.firstName ?? '',
       lastName: candidate.lastName ?? '',
       headline: candidate.headline ?? '',
+      profileImageUrl: candidate.profileImageUrl ?? null,
+      isOpenToWork: candidate.isOpenToWork === true,
       location: candidate.location ?? '',
       skills: Array.isArray(candidate.skills) ? candidate.skills : [],
       education: Array.isArray(candidate.education) ? candidate.education : [],
@@ -233,6 +242,10 @@ export function downloadCompanyApplicantResume(id: string) {
   // relative to the configured API base. Build the known same-origin route from
   // the application ID instead of fetching a server-provided arbitrary URL.
   return apiBlob(`/company/applications/${encodeURIComponent(id)}/resume`)
+}
+
+export function downloadCompanyApplicantAvatar(id: string) {
+  return apiBlob(`/company/applications/${encodeURIComponent(id)}/candidate-avatar`)
 }
 
 export async function fetchCompanyApplicantDashboardSummary(): Promise<CompanyApplicantDashboardSummary> {
