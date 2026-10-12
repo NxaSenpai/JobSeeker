@@ -13,6 +13,8 @@ import {
   JobStatus,
 } from '../account/entities/job.entity';
 import { Application } from '../account/entities/application.entity';
+import { ApplicationDraft } from '../account/entities/application-draft.entity';
+import { SavedJob } from '../account/entities/saved-job.entity';
 import { presentJob } from '../account/job-presenter';
 import { User } from '../users/entities/user.entity';
 import { CompanyService } from './company.service';
@@ -45,6 +47,7 @@ const writableFields = [
   'responsibilities',
   'requirements',
   'benefits',
+  'skills',
   'salaryMin',
   'salaryMax',
   'currency',
@@ -225,6 +228,40 @@ export class CompanyJobsService {
     return this.transition(user, id, (job) => {
       job.status = JobStatus.ARCHIVED;
     });
+  }
+
+  async restore(user: User, id: string) {
+    return this.transition(user, id, (job) => {
+      if (job.status !== JobStatus.ARCHIVED) {
+        throw new ConflictException('Only archived jobs can be restored.');
+      }
+      // Restore it as closed so the company can review it before publishing again.
+      job.status = JobStatus.CLOSED;
+    });
+  }
+
+  async remove(user: User, id: string) {
+    const company = await this.companiesService.ensureOwnProfile(user);
+    let removedApplications = 0;
+    await this.database.transaction(async (manager) => {
+      const job = await manager.findOne(Job, {
+        where: { id, companyId: company.id },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!job) throw new NotFoundException('Job was not found.');
+
+      const applicationCount = await manager.count(Application, {
+        where: { jobId: id },
+      });
+      removedApplications = applicationCount;
+
+      // Application messages, notes, and interviews cascade from the application.
+      await manager.delete(Application, { jobId: id });
+      await manager.delete(SavedJob, { jobId: id });
+      await manager.delete(ApplicationDraft, { jobId: id });
+      await manager.remove(job);
+    });
+    return { deleted: true, id, removedApplications };
   }
 
   private async transition(

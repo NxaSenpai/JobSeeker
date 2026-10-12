@@ -40,7 +40,8 @@ export class ApplicationService {
         if (
           !job ||
           job.status !== JobStatus.PUBLISHED ||
-          job.moderationStatus !== JobModerationStatus.APPROVED
+          (job.moderationStatus !== JobModerationStatus.APPROVED &&
+            job.moderationStatus !== JobModerationStatus.PENDING)
         )
           throw new NotFoundException('This job is no longer available.');
         let company: Company | null = null;
@@ -99,13 +100,28 @@ export class ApplicationService {
         const companyOwner = company?.ownerUserId
           ? await manager.findOneBy(User, { id: company.ownerUserId })
           : null;
+        const companyNotification = companyOwner
+          ? await manager.save(
+              Notification,
+              manager.create(Notification, {
+                userId: companyOwner.id,
+                title: 'New application received',
+                message: `${[user.firstName, user.lastName].filter(Boolean).join(' ') || 'A candidate'} applied for ${job.title}.`,
+                link: `/company/applicants/${application.id}`,
+                readAt: null,
+              }),
+            )
+          : null;
         return {
           application: this.present({ ...application, job, resume }),
           companyEmail: companyOwner?.email ?? null,
           notification,
+          companyNotification,
         };
       });
       this.realtimeNotifications.publish(submitted.notification);
+      if (submitted.companyNotification)
+        this.realtimeNotifications.publish(submitted.companyNotification);
       if (submitted.companyEmail) {
         await this.email.sendActivityEmail(
           submitted.companyEmail,

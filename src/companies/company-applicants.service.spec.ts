@@ -170,6 +170,8 @@ describe('CompanyApplicantsService', () => {
     );
     expect(managerQueryBuilder.setLock).toHaveBeenCalledWith(
       'pessimistic_write',
+      undefined,
+      ['application'],
     );
     expect(application.history.at(-1)).toMatchObject({
       status: ApplicationStatus.SHORTLISTED,

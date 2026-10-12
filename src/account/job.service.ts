@@ -6,7 +6,7 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
 import {
   Job,
   JobModerationStatus,
@@ -295,8 +295,11 @@ export class JobService implements OnModuleInit {
       .createQueryBuilder('job')
       .leftJoinAndSelect('job.companyProfile', 'company')
       .where('job.status = :status', { status: JobStatus.PUBLISHED })
-      .andWhere('job.moderationStatus = :moderationStatus', {
-        moderationStatus: JobModerationStatus.APPROVED,
+      .andWhere('job.moderationStatus IN (:...moderationStatuses)', {
+        moderationStatuses: [
+          JobModerationStatus.APPROVED,
+          JobModerationStatus.PENDING,
+        ],
       })
       .andWhere('(job.isDemo = true OR company.isVerified = true)')
       .andWhere('(job.isDemo = true OR company.suspendedAt IS NULL)')
@@ -385,8 +388,11 @@ export class JobService implements OnModuleInit {
       .createQueryBuilder('job')
       .leftJoinAndSelect('job.companyProfile', 'company')
       .where('job.status = :status', { status: JobStatus.PUBLISHED })
-      .andWhere('job.moderationStatus = :moderationStatus', {
-        moderationStatus: JobModerationStatus.APPROVED,
+      .andWhere('job.moderationStatus IN (:...moderationStatuses)', {
+        moderationStatuses: [
+          JobModerationStatus.APPROVED,
+          JobModerationStatus.PENDING,
+        ],
       })
       .andWhere('job.isFeatured = true')
       .andWhere('(job.isDemo = true OR company.isVerified = true)')
@@ -406,8 +412,11 @@ export class JobService implements OnModuleInit {
       .select(`MIN(${category})`, 'name')
       .addSelect('COUNT(*)', 'count')
       .where('job.status = :status', { status: JobStatus.PUBLISHED })
-      .andWhere('job.moderationStatus = :moderationStatus', {
-        moderationStatus: JobModerationStatus.APPROVED,
+      .andWhere('job.moderationStatus IN (:...moderationStatuses)', {
+        moderationStatuses: [
+          JobModerationStatus.APPROVED,
+          JobModerationStatus.PENDING,
+        ],
       })
       .andWhere('(job.isDemo = true OR company.isVerified = true)')
       .andWhere('(job.isDemo = true OR company.suspendedAt IS NULL)')
@@ -429,7 +438,10 @@ export class JobService implements OnModuleInit {
       where: {
         id,
         status: JobStatus.PUBLISHED,
-        moderationStatus: JobModerationStatus.APPROVED,
+        moderationStatus: In<JobModerationStatus>([
+          JobModerationStatus.APPROVED,
+          JobModerationStatus.PENDING,
+        ]),
       },
       relations: { companyProfile: true },
     });
@@ -443,8 +455,11 @@ export class JobService implements OnModuleInit {
       .createQueryBuilder('job')
       .leftJoinAndSelect('job.companyProfile', 'company')
       .where('job.status = :status', { status: JobStatus.PUBLISHED })
-      .andWhere('job.moderationStatus = :moderationStatus', {
-        moderationStatus: JobModerationStatus.APPROVED,
+      .andWhere('job.moderationStatus IN (:...moderationStatuses)', {
+        moderationStatuses: [
+          JobModerationStatus.APPROVED,
+          JobModerationStatus.PENDING,
+        ],
       })
       .andWhere('(job.isDemo = true OR company.isVerified = true)')
       .andWhere('(job.isDemo = true OR company.suspendedAt IS NULL)')
@@ -474,7 +489,8 @@ export class JobService implements OnModuleInit {
     if (
       !job ||
       job.status !== JobStatus.PUBLISHED ||
-      job.moderationStatus !== JobModerationStatus.APPROVED ||
+      (job.moderationStatus !== JobModerationStatus.APPROVED &&
+        job.moderationStatus !== JobModerationStatus.PENDING) ||
       (!job.isDemo &&
         (!job.companyProfile?.isVerified || job.companyProfile?.suspendedAt))
     ) {

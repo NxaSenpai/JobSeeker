@@ -47,6 +47,14 @@ export class UpdateCompanyProfileDto {
     typeof value === 'string' ? value.trim() : value,
   )
   @IsString()
+  @MaxLength(100)
+  @IsOptional()
+  contactName?: string;
+
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === 'string' ? value.trim() : value,
+  )
+  @IsString()
   @MinLength(2)
   @MaxLength(180)
   @IsOptional()
@@ -68,12 +76,14 @@ export class UpdateCompanyProfileDto {
   @IsOptional()
   companySize?: string;
 
-  @Type(() => Number)
+  @Transform(({ value }: { value: unknown }) =>
+    value === null || value === '' ? null : Number(value),
+  )
   @IsInt()
   @Min(1800)
   @Max(new Date().getUTCFullYear())
   @IsOptional()
-  foundedYear?: number;
+  foundedYear?: number | null;
 
   @Transform(({ value }: { value: unknown }) =>
     typeof value === 'string' ? value.trim() : value,

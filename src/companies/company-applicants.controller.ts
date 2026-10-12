@@ -3,6 +3,7 @@ import {
   Controller,
   Delete,
   Get,
+  Header,
   Param,
   ParseUUIDPipe,
   Patch,
@@ -17,6 +18,7 @@ import type { Response } from 'express';
 import { SessionGuard, type SessionRequest } from '../auth/session.guard';
 import { JobIdDto } from '../account/account.dto';
 import { ResumeService } from '../account/resume.service';
+import { AvatarService } from '../account/avatar.service';
 import { CompanyRoleGuard } from './company-role.guard';
 import { CompanyService } from './company.service';
 import {
@@ -33,6 +35,7 @@ export class CompanyApplicantsController {
     private readonly applicants: CompanyApplicantsService,
     private readonly companies: CompanyService,
     private readonly resumes: ResumeService,
+    private readonly avatars: AvatarService,
   ) {}
 
   @Get('applications')
@@ -55,6 +58,20 @@ export class CompanyApplicantsController {
   @Get('applications/:id')
   get(@Req() request: SessionRequest, @Param('id', ParseUUIDPipe) id: string) {
     return this.applicants.get(request.user, id);
+  }
+
+  @Get('applications/:id/candidate-avatar')
+  @Header('Cache-Control', 'private, no-store')
+  @Header('X-Content-Type-Options', 'nosniff')
+  async getCandidateAvatar(
+    @Req() request: SessionRequest,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    const userId = await this.applicants.candidateAvatarUserId(request.user, id);
+    return new StreamableFile(await this.avatars.open(userId), {
+      type: 'image/jpeg',
+      disposition: 'inline',
+    });
   }
 
   @Patch('applications/:id/status')

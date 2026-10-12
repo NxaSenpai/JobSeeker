@@ -59,7 +59,12 @@ const employerTransitions: Record<
     ApplicationStatus.HIRED,
     ApplicationStatus.REJECTED,
   ],
-  [ApplicationStatus.HIRED]: [],
+  [ApplicationStatus.HIRED]: [
+    ApplicationStatus.UNDER_REVIEW,
+    ApplicationStatus.SHORTLISTED,
+    ApplicationStatus.INTERVIEW,
+    ApplicationStatus.OFFERED,
+  ],
   [ApplicationStatus.REJECTED]: [],
   [ApplicationStatus.WITHDRAWN]: [],
 };
@@ -69,10 +74,13 @@ type CandidateSnapshot = {
   lastName?: unknown;
   headline?: unknown;
   bio?: unknown;
+  phone?: unknown;
+  profileImageUrl?: unknown;
   location?: unknown;
   websiteUrl?: unknown;
   linkedinUrl?: unknown;
   githubUrl?: unknown;
+  isOpenToWork?: unknown;
   email?: unknown;
   skills?: unknown;
   education?: unknown;
@@ -98,6 +106,8 @@ export class CompanyApplicantsService {
     const builder = this.applications
       .createQueryBuilder('application')
       .innerJoinAndSelect('application.job', 'job')
+      .leftJoinAndSelect('application.user', 'user')
+      .leftJoinAndSelect('user.profile', 'profile')
       .where('job.companyId = :companyId', { companyId: company.id });
 
     if (query.jobId) {
@@ -159,6 +169,12 @@ export class CompanyApplicantsService {
     return { application: this.presentDetails(application) };
   }
 
+  async candidateAvatarUserId(user: User, id: string) {
+    const company = await this.companies.ensureOwnProfile(user);
+    const application = await this.ownedApplication(company.id, id);
+    return application.userId;
+  }
+
   async updateStatus(
     user: User,
     id: string,
@@ -181,9 +197,10 @@ export class CompanyApplicantsService {
         .innerJoinAndSelect('application.job', 'job')
         .innerJoinAndSelect('application.resume', 'resume')
         .innerJoinAndSelect('application.user', 'user')
+        .leftJoinAndSelect('user.profile', 'profile')
         .where('application.id = :id', { id })
         .andWhere('job.companyId = :companyId', { companyId: company.id })
-        .setLock('pessimistic_write')
+        .setLock('pessimistic_write', undefined, ['application'])
         .getOne();
 
       if (!current) throw new NotFoundException('Application was not found.');
@@ -271,6 +288,8 @@ export class CompanyApplicantsService {
       .createQueryBuilder('application')
       .innerJoinAndSelect('application.job', 'job')
       .innerJoinAndSelect('application.resume', 'resume')
+      .leftJoinAndSelect('application.user', 'user')
+      .leftJoinAndSelect('user.profile', 'profile')
       .where('application.id = :id', { id })
       .andWhere('job.companyId = :companyId', { companyId })
       .getOne();
@@ -279,7 +298,7 @@ export class CompanyApplicantsService {
   }
 
   private presentListItem(application: Application) {
-    const candidate = (application.candidate ?? {}) as CandidateSnapshot;
+    const candidate = this.currentCandidateData(application);
     return {
       id: application.id,
       job: {
@@ -294,6 +313,7 @@ export class CompanyApplicantsService {
         headline: candidate.headline ?? '',
         location: candidate.location ?? '',
         skills: Array.isArray(candidate.skills) ? candidate.skills : [],
+        profileImageUrl: candidate.profileImageUrl ?? null,
       },
       status: application.status,
       appliedAt: application.createdAt,
@@ -302,17 +322,21 @@ export class CompanyApplicantsService {
   }
 
   private presentDetails(application: Application) {
-    const snapshot = (application.candidate ?? {}) as CandidateSnapshot;
+    const submittedSnapshot = (application.candidate ?? {}) as CandidateSnapshot;
+    const snapshot = this.currentCandidateData(application);
     const candidate: Record<string, unknown> = {};
     for (const key of [
       'firstName',
       'lastName',
       'headline',
       'bio',
+      'phone',
+      'profileImageUrl',
       'location',
       'websiteUrl',
       'linkedinUrl',
       'githubUrl',
+      'isOpenToWork',
       'skills',
       'education',
       'experience',
@@ -332,7 +356,10 @@ export class CompanyApplicantsService {
       },
       candidate,
       contact: {
-        email: typeof snapshot.email === 'string' ? snapshot.email : null,
+        email:
+          typeof submittedSnapshot.email === 'string'
+            ? submittedSnapshot.email
+            : null,
         phone: application.phone || null,
       },
       description: application.description,
@@ -353,6 +380,41 @@ export class CompanyApplicantsService {
       })),
       appliedAt: application.createdAt,
       updatedAt: application.updatedAt,
+    };
+  }
+
+  private currentCandidateData(application: Application): CandidateSnapshot {
+    const submitted = (application.candidate ?? {}) as CandidateSnapshot;
+    const user = application.user;
+    const profile = user?.profile;
+    if (!profile) {
+      return {
+        ...submitted,
+        email: user?.email ?? submitted.email,
+        phone: submitted.phone ?? application.phone,
+      };
+    }
+
+    // Candidate identity and profile fields stay current; application answers,
+    // contact details, and the attached résumé remain the submitted snapshot.
+    return {
+      ...submitted,
+      firstName: profile.firstName,
+      lastName: profile.lastName,
+      headline: profile.headline,
+      bio: profile.bio,
+      phone: profile.phone,
+      profileImageUrl: profile.profileImageUrl,
+      location: profile.location,
+      websiteUrl: profile.websiteUrl,
+      linkedinUrl: profile.linkedinUrl,
+      githubUrl: profile.githubUrl,
+      isOpenToWork: profile.isOpenToWork,
+      email: user.email,
+      skills: profile.skills ?? [],
+      education: profile.education ?? [],
+      experience: profile.experience ?? [],
+      languages: profile.languages ?? [],
     };
   }
 

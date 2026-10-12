@@ -64,8 +64,6 @@ export class ProfileService {
         );
     }
     for (const entry of [...(dto.education ?? []), ...(dto.experience ?? [])]) {
-      if (entry.endDate && entry.endDate < entry.startDate)
-        throw new BadRequestException('End date cannot be before start date.');
       if (entry.startDate > new Date().toISOString().slice(0, 10))
         throw new BadRequestException('Start date cannot be in the future.');
     }

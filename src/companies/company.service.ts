@@ -8,7 +8,11 @@ import { randomUUID } from 'node:crypto';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, Repository } from 'typeorm';
 import { User, UserRole } from '../users/entities/user.entity';
-import { Job, JobStatus } from '../account/entities/job.entity';
+import {
+  Job,
+  JobModerationStatus,
+  JobStatus,
+} from '../account/entities/job.entity';
 import { Company } from '../account/entities/company.entity';
 import { CompaniesQueryDto, UpdateCompanyProfileDto } from './company.dto';
 import { NotificationRealtimeService } from '../notifications/notification-realtime.service';
@@ -104,7 +108,13 @@ export class CompanyService {
   }
 
   async ownProfile(user: User) {
-    return { company: this.present(await this.ensureOwnProfile(user)) };
+    const company = await this.ensureOwnProfile(user);
+    return {
+      company: {
+        ...this.present(company),
+        contactName: user.contactName,
+      },
+    };
   }
 
   async updateOwnProfile(user: User, dto: UpdateCompanyProfileDto) {
@@ -137,9 +147,22 @@ export class CompanyService {
       if (dto.name !== undefined) {
         await manager.update(User, { id: user.id }, { companyName: dto.name });
       }
+      if (dto.contactName !== undefined) {
+        await manager.update(User, { id: user.id }, {
+          contactName: dto.contactName.trim() || null,
+        });
+      }
       return manager.save(company);
     });
-    return { company: this.present(updated) };
+    return {
+      company: {
+        ...this.present(updated),
+        contactName:
+          dto.contactName === undefined
+            ? user.contactName
+            : dto.contactName.trim() || null,
+      },
+    };
   }
 
   async listPublic(query: CompaniesQueryDto) {
@@ -260,8 +283,11 @@ export class CompanyService {
       .addSelect('COUNT(*)', 'count')
       .where('job.companyId IN (:...companyIds)', { companyIds })
       .andWhere('job.status = :status', { status: JobStatus.PUBLISHED })
-      .andWhere('job.moderationStatus = :moderationStatus', {
-        moderationStatus: 'APPROVED',
+      .andWhere('job.moderationStatus IN (:...moderationStatuses)', {
+        moderationStatuses: [
+          JobModerationStatus.APPROVED,
+          JobModerationStatus.PENDING,
+        ],
       })
       .andWhere('(job.deadline IS NULL OR job.deadline > NOW())')
       .groupBy('job.companyId')

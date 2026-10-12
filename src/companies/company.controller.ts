@@ -3,13 +3,18 @@ import {
   Controller,
   Delete,
   Get,
+  Header,
   Param,
   Patch,
   Post,
   Query,
   Req,
+  StreamableFile,
+  UploadedFile,
   UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { SessionGuard, type SessionRequest } from '../auth/session.guard';
 import { JobService } from '../account/job.service';
 import {
@@ -21,6 +26,7 @@ import {
 } from './company.dto';
 import { CompanyService } from './company.service';
 import { CompanyJobsService } from './company-jobs.service';
+import { CompanyLogoService } from './company-logo.service';
 import { CompanyRoleGuard } from './company-role.guard';
 import { NotificationRealtimeService } from '../notifications/notification-realtime.service';
 
@@ -29,6 +35,7 @@ export class PublicCompaniesController {
   constructor(
     private readonly companies: CompanyService,
     private readonly jobs: JobService,
+    private readonly logos: CompanyLogoService,
   ) {}
 
   @Get()
@@ -46,6 +53,16 @@ export class PublicCompaniesController {
       company: this.companies.present(company),
       ...(await this.jobs.list(query, company.id)),
     };
+  }
+
+  @Get(':id/logo')
+  @Header('Cache-Control', 'public, max-age=31536000, immutable')
+  @Header('X-Content-Type-Options', 'nosniff')
+  async logo(@Param('id') id: string) {
+    return new StreamableFile(await this.logos.openPublic(id), {
+      type: 'image/jpeg',
+      disposition: 'inline',
+    });
   }
 
   @Get(':id')
@@ -67,6 +84,40 @@ export class CompanyProfileController {
   @Patch()
   update(@Req() request: SessionRequest, @Body() dto: UpdateCompanyProfileDto) {
     return this.companies.updateOwnProfile(request.user, dto);
+  }
+}
+
+@Controller('api/v1/company/profile/logo')
+@UseGuards(SessionGuard, CompanyRoleGuard)
+export class CompanyLogoController {
+  constructor(private readonly logos: CompanyLogoService) {}
+
+  @Post()
+  @UseInterceptors(
+    FileInterceptor('file', {
+      limits: { fileSize: 5 * 1024 * 1024, files: 1 },
+    }),
+  )
+  upload(
+    @Req() request: SessionRequest,
+    @UploadedFile() file?: Express.Multer.File,
+  ) {
+    return this.logos.upload(request.user, file);
+  }
+
+  @Get()
+  @Header('Cache-Control', 'private, no-store')
+  @Header('X-Content-Type-Options', 'nosniff')
+  async get(@Req() request: SessionRequest) {
+    return new StreamableFile(await this.logos.openOwn(request.user), {
+      type: 'image/jpeg',
+      disposition: 'inline',
+    });
+  }
+
+  @Delete()
+  remove(@Req() request: SessionRequest) {
+    return this.logos.remove(request.user);
   }
 }
 
@@ -122,10 +173,14 @@ export class CompanyJobsController {
     return this.withQueueUpdate(this.jobs.archive(request.user, id));
   }
 
+  @Patch(':id/restore')
+  restore(@Req() request: SessionRequest, @Param('id') id: string) {
+    return this.withQueueUpdate(this.jobs.restore(request.user, id));
+  }
+
   @Delete(':id')
   remove(@Req() request: SessionRequest, @Param('id') id: string) {
-    // Archiving retains applications and their FK-protected records.
-    return this.withQueueUpdate(this.jobs.archive(request.user, id));
+    return this.withQueueUpdate(this.jobs.remove(request.user, id));
   }
 
   private async withQueueUpdate<T>(operation: Promise<T>): Promise<T> {

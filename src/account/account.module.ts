@@ -53,6 +53,6 @@ import { NotificationsModule } from '../notifications/notifications.module';
     UserProfileController,
   ],
   providers: [ProfileService, ResumeService, ApplicationService, AvatarService],
-  exports: [ResumeService],
+  exports: [ResumeService, AvatarService],
 })
 export class AccountModule {}

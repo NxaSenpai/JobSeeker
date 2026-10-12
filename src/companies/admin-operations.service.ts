@@ -11,6 +11,8 @@ import {
   JobModerationStatus,
   JobStatus,
 } from '../account/entities/job.entity';
+import { Resume } from '../account/entities/resume.entity';
+import { UserProfile } from '../account/entities/user-profile.entity';
 import { presentJob } from '../account/job-presenter';
 import { User } from '../users/entities/user.entity';
 import { AuditLog } from './audit-log.entity';
@@ -69,7 +71,30 @@ export class AdminOperationsService {
   async getUser(id: string) {
     const user = await this.users.findOneBy({ id });
     if (!user) throw new NotFoundException('User was not found.');
-    return { user: this.presentUser(user) };
+    const profile = await this.database
+      .getRepository(UserProfile)
+      .findOneBy({ userId: user.id });
+    const resumes = profile
+      ? await this.database.getRepository(Resume).find({
+          where: { profileId: profile.id },
+          order: { createdAt: 'DESC' },
+        })
+      : [];
+    return {
+      user: {
+        ...this.presentUser(user),
+        profile: profile ? this.presentAdminProfile(profile) : null,
+        resumes: resumes.map((resume) => ({
+          id: resume.id,
+          fileName: resume.fileName,
+          mimeType: resume.mimeType,
+          fileSize: resume.fileSize,
+          isDefault: resume.isDefault,
+          createdAt: resume.createdAt,
+          updatedAt: resume.updatedAt,
+        })),
+      },
+    };
   }
 
   async suspendUser(id: string, actorUserId: string, dto: AdminReasonDto) {
@@ -473,11 +498,40 @@ export class AdminOperationsService {
       lastName: user.lastName,
       companyName: user.companyName,
       contactName: user.contactName,
+      headline: user.headline,
+      location: user.location,
+      bio: user.bio,
       emailVerified: user.emailVerified,
+      termsAccepted: user.termsAccepted,
       suspendedAt: user.suspendedAt,
       suspensionReason: user.suspensionReason,
       createdAt: user.createdAt,
       updatedAt: user.updatedAt,
+    };
+  }
+
+  private presentAdminProfile(profile: UserProfile) {
+    return {
+      id: profile.id,
+      userId: profile.userId,
+      firstName: profile.firstName,
+      lastName: profile.lastName,
+      headline: profile.headline,
+      bio: profile.bio,
+      phone: profile.phone,
+      profileImageUrl: profile.profileImageUrl,
+      dateOfBirth: profile.dateOfBirth,
+      location: profile.location,
+      websiteUrl: profile.websiteUrl,
+      linkedinUrl: profile.linkedinUrl,
+      githubUrl: profile.githubUrl,
+      isOpenToWork: profile.isOpenToWork,
+      skills: profile.skills ?? [],
+      education: profile.education ?? [],
+      experience: profile.experience ?? [],
+      languages: profile.languages ?? [],
+      createdAt: profile.createdAt,
+      updatedAt: profile.updatedAt,
     };
   }
 
