@@ -2,6 +2,7 @@
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import UiIcon from '@/components/company/UiIcon.vue'
+import InterviewScheduleForm from '@/components/company/InterviewScheduleForm.vue'
 import {
   allowedApplicantStatusChanges,
   applicantAvatarColor,
@@ -28,6 +29,7 @@ const loadError = ref('')
 const statusError = ref('')
 const statusMessage = ref('')
 const statusSaving = ref(false)
+const interviewScheduleOpen = ref(false)
 const resumeError = ref('')
 const resumeLoading = ref(false)
 const resumePreviewUrl = ref('')
@@ -169,6 +171,13 @@ async function changeStatus(event: Event) {
   if (!application.value || statusSaving.value) return
   const status = (event.target as HTMLSelectElement).value as ApplicantStatus
   if (status === application.value.status) return
+  if (status === 'INTERVIEW') {
+    statusError.value = ''
+    statusMessage.value = ''
+    interviewScheduleOpen.value = true
+    return
+  }
+  interviewScheduleOpen.value = false
   statusSaving.value = true
   statusError.value = ''
   statusMessage.value = ''
@@ -180,6 +189,26 @@ async function changeStatus(event: Event) {
   } finally {
     statusSaving.value = false
   }
+}
+
+function cancelInterviewSchedule() {
+  interviewScheduleOpen.value = false
+}
+
+function onInterviewScheduled(status: ApplicantStatus) {
+  if (!application.value) return
+  if (application.value.status !== status) {
+    application.value.status = status
+    application.value.history = [
+      ...(application.value.history ?? []),
+      { status, at: new Date().toISOString(), changedBy: 'COMPANY' },
+    ]
+  }
+  interviewScheduleOpen.value = false
+  statusError.value = ''
+  statusMessage.value = status === 'INTERVIEW'
+    ? 'Interview scheduled. The application stage is now Interview, and the candidate has been notified.'
+    : `Interview scheduled. The application stage is ${applicantStatusLabel(status)}.`
 }
 
 async function downloadResume() {
@@ -267,7 +296,7 @@ onBeforeUnmount(() => {
         </div>
         <label class="stage-control">
           <span>Application stage</span>
-          <select :value="application.status" :disabled="statusSaving || statusOptions.length === 1" aria-label="Application stage" @change="changeStatus">
+          <select :value="interviewScheduleOpen ? 'INTERVIEW' : application.status" :disabled="statusSaving || statusOptions.length === 1" aria-label="Application stage" @change="changeStatus">
             <option v-for="status in statusOptions" :key="status" :value="status">{{ applicantStatusLabel(status) }}</option>
           </select>
         </label>
@@ -283,6 +312,15 @@ onBeforeUnmount(() => {
         <div><dt>Résumé</dt><dd>{{ application.resume.fileName }}</dd></div>
       </dl>
     </section>
+
+    <InterviewScheduleForm
+      :application-id="application.id"
+      :job-title="application.job.title"
+      :open="interviewScheduleOpen"
+      class="profile-interview-form"
+      @cancel="cancelInterviewSchedule"
+      @scheduled="onInterviewScheduled"
+    />
 
     <div class="profile-layout">
       <main class="main-column">
@@ -389,6 +427,15 @@ onBeforeUnmount(() => {
       <p v-if="statusError" class="status-feedback status-error" role="alert">{{ statusError }}</p>
       <p v-else-if="statusMessage" class="status-feedback" role="status">{{ statusMessage }}</p>
 
+      <InterviewScheduleForm
+        :application-id="application.id"
+        :job-title="application.job.title"
+        :open="interviewScheduleOpen"
+        class="profile-interview-form"
+        @cancel="cancelInterviewSchedule"
+        @scheduled="onInterviewScheduled"
+      />
+
       <div class="profile-layout application-review-layout">
         <main class="main-column">
           <section class="profile-card application-card" aria-labelledby="application-form-heading">
@@ -425,11 +472,12 @@ onBeforeUnmount(() => {
             <header class="card-heading"><div><h2 id="application-stage-heading">Review stage</h2><p>Update the current hiring stage.</p></div></header>
             <label class="stage-control">
               <span>Application stage</span>
-              <select :value="application.status" :disabled="statusSaving || statusOptions.length === 1" aria-label="Application stage" @change="changeStatus">
+              <select :value="interviewScheduleOpen ? 'INTERVIEW' : application.status" :disabled="statusSaving || statusOptions.length === 1" aria-label="Application stage" @change="changeStatus">
                 <option v-for="status in statusOptions" :key="status" :value="status">{{ applicantStatusLabel(status) }}</option>
               </select>
             </label>
             <p v-if="statusSaving" class="profile-empty" role="status">Saving stage…</p>
+            <button v-if="application.status === 'INTERVIEW' && !interviewScheduleOpen" type="button" class="schedule-another-interview" @click="interviewScheduleOpen = true">Schedule an interview</button>
           </section>
           <section class="profile-card review-contact-card" aria-labelledby="application-contact-heading">
             <header class="card-heading"><h2 id="application-contact-heading">Applicant contact</h2></header>
@@ -446,6 +494,10 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .candidate-profile-page { width: min(100%, 1500px); margin: 0 auto; color: #172044; }
+.profile-interview-form { margin: 18px 0 24px; }
+.schedule-another-interview { width: 100%; min-height: 39px; margin-top: 14px; padding: 0 12px; border: 1px solid #e0daf4; border-radius: 8px; background: #f7f5ff; color: #5c49c5; font-size: 12px; font-weight: 700; cursor: pointer; transition: background 150ms ease, border-color 150ms ease; }
+.schedule-another-interview:hover { border-color: #cfc5f0; background: #f0edff; }
+.schedule-another-interview:focus-visible { outline: 3px solid rgb(123 102 255 / 30%); outline-offset: 2px; }
 .back-button { margin: 0 0 18px; padding: 6px 2px; border: 0; display: inline-flex; align-items: center; gap: 7px; background: transparent; color: #58658a; font-size: 13px; font-weight: 650; cursor: pointer; }
 .back-button :deep(svg) { transform: rotate(180deg); }
 .back-button:hover { color: #4b34c7; }

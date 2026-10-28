@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import AuthPageFrame from '@/components/auth/AuthPageFrame.vue'
 import PasswordField from '@/components/auth/PasswordField.vue'
+import { usePasswordMatchStatus } from '@/composables/usePasswordMatchStatus'
 import { ApiRequestError, apiRequest } from '@/services/api'
 
 type RegistrationResponse = {
@@ -25,9 +26,7 @@ const loading = ref(false)
 const errorMessage = ref('')
 const router = useRouter()
 
-const passwordsDoNotMatch = computed(
-  () => Boolean(confirmPassword.value) && password.value !== confirmPassword.value,
-)
+const passwordMatchStatus = usePasswordMatchStatus(password, confirmPassword)
 
 async function createAccount() {
   errorMessage.value = ''
@@ -104,8 +103,7 @@ async function createAccount() {
 
       <div class="mt-4 grid gap-4">
         <PasswordField v-model="password" label="Password" placeholder="Create a password" autocomplete="new-password" />
-        <PasswordField v-model="confirmPassword" label="Confirm password" placeholder="Repeat your password" autocomplete="new-password" />
-        <p v-if="passwordsDoNotMatch" class="-mt-2 text-sm text-[#af3348]" role="alert">Passwords do not match.</p>
+        <PasswordField v-model="confirmPassword" label="Confirm password" placeholder="Repeat your password" autocomplete="new-password" :validation-status="passwordMatchStatus" />
       </div>
 
       <label class="mt-5 flex cursor-pointer items-start gap-3 text-sm leading-6 text-[#5c6d99]">

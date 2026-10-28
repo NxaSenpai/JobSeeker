@@ -171,7 +171,6 @@ function changePage(nextPage: number) {
           <option value="CLOSED">Closed</option>
           <option value="ARCHIVED">Archived</option>
         </select>
-        <span class="queue-note"><i /> Decisions are recorded in the admin audit log.</span>
       </div>
 
       <p v-if="actionMessage" class="notice success" role="status">{{ actionMessage }}</p>

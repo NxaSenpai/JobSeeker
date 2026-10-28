@@ -408,7 +408,6 @@ onBeforeUnmount(() => {
             <img v-if="companyAvatarUrl" class="avatar avatar-small company-account-photo" :src="companyAvatarUrl" :alt="displayName + ' logo'" />
             <span v-else class="avatar avatar-small avatar-emma">{{ initials }}</span>
             <span class="profile-copy"><strong>{{ displayName }}</strong></span>
-            <UiIcon name="chevron" :size="16" />
           </button>
         </div>
       </div>

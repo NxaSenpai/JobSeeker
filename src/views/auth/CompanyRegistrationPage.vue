@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import AuthPageFrame from '@/components/auth/AuthPageFrame.vue'
 import PasswordField from '@/components/auth/PasswordField.vue'
+import { usePasswordMatchStatus } from '@/composables/usePasswordMatchStatus'
 import { ApiRequestError, apiRequest } from '@/services/api'
 
 type RegistrationResponse = {
@@ -24,9 +25,7 @@ const loading = ref(false)
 const errorMessage = ref('')
 const router = useRouter()
 
-const passwordsDoNotMatch = computed(
-  () => Boolean(confirmPassword.value) && password.value !== confirmPassword.value,
-)
+const passwordMatchStatus = usePasswordMatchStatus(password, confirmPassword)
 
 async function createCompanyAccount() {
   errorMessage.value = ''
@@ -81,8 +80,7 @@ async function createCompanyAccount() {
 
       <div class="mt-4 grid gap-4">
         <PasswordField v-model="password" label="Password" placeholder="Create a password" autocomplete="new-password" />
-        <PasswordField v-model="confirmPassword" label="Confirm password" placeholder="Repeat your password" autocomplete="new-password" />
-        <p v-if="passwordsDoNotMatch" class="-mt-2 text-sm text-[#af3348]" role="alert">Passwords do not match.</p>
+        <PasswordField v-model="confirmPassword" label="Confirm password" placeholder="Repeat your password" autocomplete="new-password" :validation-status="passwordMatchStatus" />
       </div>
 
       <button type="submit" :disabled="loading" class="mt-6 w-full cursor-pointer rounded-xl bg-[#7b66ff] px-6 py-3.5 text-sm font-semibold text-white shadow-[0_12px_26px_rgba(123,102,255,0.25)] transition hover:bg-[#6f5cf9] disabled:cursor-not-allowed disabled:opacity-60">

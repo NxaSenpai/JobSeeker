@@ -76,6 +76,12 @@ const router = createRouter({
           meta: { requiresAuth: true, role: "USER" },
         },
         {
+          path: "interviews/me",
+          name: "UserInterviewsPage",
+          component: () => import("@/views/user/UserInterviewsPage.vue"),
+          meta: { requiresAuth: true, role: "USER" },
+        },
+        {
           path: "reports",
           name: "MyReportsPage",
           component: () => import("@/views/user/MyReportsPage.vue"),
