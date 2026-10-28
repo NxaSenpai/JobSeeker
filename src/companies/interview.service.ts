@@ -102,7 +102,7 @@ export class InterviewService {
         manager,
         application,
         'Interview scheduled',
-        `An interview for ${application.job.title} is scheduled for ${scheduledAt.toISOString()}.`,
+        `An interview for ${application.job.title} has been scheduled. Open the details to review the time, format, location, and instructions.`,
       );
       return { interview: { ...saved, application }, notification };
     });
@@ -110,7 +110,7 @@ export class InterviewService {
     await this.email.sendActivityEmail(
       result.interview.application.user.email,
       'INTERVIEW_SCHEDULED',
-      `/applications/${result.interview.applicationId}?tab=interviews`,
+      `/interviews/me?applicationId=${encodeURIComponent(result.interview.applicationId)}`,
     );
     return { interview: this.present(result.interview) };
   }
@@ -136,7 +136,7 @@ export class InterviewService {
   }
 
   async listForCandidate(user: User, query: InterviewListQueryDto) {
-    const [interviews, total] = await this.interviews
+    const queryBuilder = this.interviews
       .createQueryBuilder('interview')
       .innerJoinAndSelect('interview.application', 'application')
       .innerJoinAndSelect('application.job', 'job')
@@ -144,8 +144,12 @@ export class InterviewService {
       .orderBy('interview.scheduledAt', 'ASC')
       .addOrderBy('interview.id', 'ASC')
       .skip((query.page - 1) * query.limit)
-      .take(query.limit)
-      .getManyAndCount();
+      .take(query.limit);
+    if (query.applicationId)
+      queryBuilder.andWhere('application.id = :applicationId', {
+        applicationId: query.applicationId,
+      });
+    const [interviews, total] = await queryBuilder.getManyAndCount();
     return {
       interviews: interviews.map((interview) => this.present(interview)),
       total,
@@ -188,7 +192,7 @@ export class InterviewService {
         manager,
         current.application,
         'Interview updated',
-        `The interview for ${current.application.job.title} has been updated.`,
+        `The interview for ${current.application.job.title} has changed. Open the details to review the latest schedule and instructions.`,
       );
       return { interview: saved, notification };
     });
@@ -196,7 +200,7 @@ export class InterviewService {
     await this.email.sendActivityEmail(
       result.interview.application.user.email,
       'INTERVIEW_UPDATED',
-      `/applications/${result.interview.applicationId}?tab=interviews`,
+      `/interviews/me?applicationId=${encodeURIComponent(result.interview.applicationId)}`,
     );
     return { interview: this.present(result.interview) };
   }
@@ -220,7 +224,7 @@ export class InterviewService {
         manager,
         current.application,
         'Interview cancelled',
-        `The interview for ${current.application.job.title} has been cancelled.`,
+        `The interview for ${current.application.job.title} has been cancelled. Open the details to review its current status.`,
       );
       return { interview: saved, changed: true, notification };
     });
@@ -230,7 +234,7 @@ export class InterviewService {
       await this.email.sendActivityEmail(
         result.interview.application.user.email,
         'INTERVIEW_CANCELLED',
-        `/applications/${result.interview.applicationId}?tab=interviews`,
+        `/interviews/me?applicationId=${encodeURIComponent(result.interview.applicationId)}`,
       );
     }
     return { interview: this.present(result.interview) };
@@ -265,7 +269,7 @@ export class InterviewService {
         userId: application.userId,
         title,
         message,
-        link: '/interviews/me',
+        link: `/interviews/me?applicationId=${encodeURIComponent(application.id)}`,
         readAt: null,
       }),
     );
@@ -324,6 +328,7 @@ export class InterviewService {
         title: interview.application.job.title,
         company: interview.application.job.company,
       },
+      applicationStatus: interview.application.status,
       candidate: {
         firstName: candidate.firstName ?? '',
         lastName: candidate.lastName ?? '',

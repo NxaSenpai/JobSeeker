@@ -6,6 +6,7 @@ import {
   IsOptional,
   IsString,
   IsUrl,
+  IsUUID,
   Matches,
   Max,
   MaxLength,
@@ -85,4 +86,8 @@ export class InterviewListQueryDto {
   @Min(1)
   @Max(100)
   limit = 20;
+
+  @IsOptional()
+  @IsUUID()
+  applicationId?: string;
 }

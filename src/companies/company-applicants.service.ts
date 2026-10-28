@@ -62,7 +62,6 @@ const employerTransitions: Record<
   [ApplicationStatus.HIRED]: [
     ApplicationStatus.UNDER_REVIEW,
     ApplicationStatus.SHORTLISTED,
-    ApplicationStatus.INTERVIEW,
     ApplicationStatus.OFFERED,
   ],
   [ApplicationStatus.REJECTED]: [],

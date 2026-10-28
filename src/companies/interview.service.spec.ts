@@ -129,7 +129,7 @@ describe('InterviewService', () => {
     expect(activityEmail).toHaveBeenCalledWith(
       'candidate@example.test',
       'INTERVIEW_SCHEDULED',
-      `/applications/${application.id}?tab=interviews`,
+      `/interviews/me?applicationId=${application.id}`,
     );
   });
 
